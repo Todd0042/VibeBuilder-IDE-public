@@ -1,0 +1,8 @@
+# gitleaks settings (picked up when it scans this folder): the default rules, plus what they get wrong here.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Keyboard shortcuts such as keys: \"Ctrl+Shift+Tab\" are not API keys"
+regexTarget = "secret"
+regexes = ['''^(Ctrl|Alt|Shift|Meta|Super)(\+[A-Za-z0-9]+)+$''']

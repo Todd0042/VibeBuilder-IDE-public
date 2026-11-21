@@ -19,7 +19,7 @@
 > **Code on your desktop's horsepower from any laptop: a fast, no-frills IDE whose files, terminals and AI agents (Claude Code, agy) live in a locked-down container at home, with an agent-change timeline that shows exactly what the AI touched, and app testing that streams each window of the app you're building straight to your laptop.**
 
 <p align="center">
-  <img src="screenshots/main_window_clean.png" alt="VibeBuilder IDE main window" width="100%">
+  <img src="screenshots/main-window.png" alt="VibeBuilder IDE main window" width="100%">
 </p>
 
 ---
@@ -70,23 +70,23 @@ It splits into three pieces:
 
 ### 🗂️ Workbench: Explorer, Editor & Terminals
 <p align="center">
-  <img src="screenshots/terminal_panel_clean.png" alt="Editor with a Claude terminal in the bottom panel" width="100%">
+  <img src="screenshots/main-window-with-code-edit-active.png" alt="Editor with a Claude terminal in the bottom panel" width="100%">
 </p>
 
-### 🔍 Agent-Change Timeline (Review)
+### ▶️ App Testing: Run App
 <p align="center">
-  <img src="screenshots/review_timeline_clean.png" alt="The Changes timeline showing an agent's edits as hunks" width="100%">
-</p>
-
-### ▶️ App Testing: Run App & Ports
-<p align="center">
-  <img src="screenshots/run_app_clean.png" alt="An app running in the builder, its window streamed to the laptop" width="49%">
-  <img src="screenshots/ports_clean.png" alt="The Ports tab forwarding a dev server" width="49%">
+  <img src="screenshots/rin-dialogue.png" alt="The Run App dialog: the app's windows open on the laptop" width="100%">
 </p>
 
 ### 🔐 Pairing & Sign-In
 <p align="center">
-  <img src="screenshots/sign_in_clean.png" alt="The pairing and sign-in screen" width="60%">
+  <img src="screenshots/pairing-screen.png" alt="Pairing a new device with a one-time code" width="49%">
+  <img src="screenshots/auth-before-anything.png" alt="Signing in with an authenticator code" width="49%">
+</p>
+
+### 📱 Devices & Shortcuts
+<p align="center">
+  <img src="screenshots/devices-and-shortcuts-list.png" alt="Paired devices, session, change history and keyboard shortcuts" width="30%">
 </p>
 
 ---

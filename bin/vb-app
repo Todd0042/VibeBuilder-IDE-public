@@ -6,7 +6,9 @@
 # same as the AppImage's, so you stay paired either way.
 #
 #   bin/vb-app            run it
-#   bin/vb-app build      build the release AppImage (desktop/src-tauri/target/release/bundle/appimage/)
+#   bin/vb-app build      build the release AppImage, in a container (only Podman needed), into
+#                         desktop/src-tauri/target/appimage/. For the public release, build with none
+#                         of this machine's settings:  VIBEBUILDER_ENV=/dev/null bin/vb-app build
 #   bin/vb-app --check    only check that the tools are installed
 #
 # From vibebuilder.env (optional on a laptop): VB_PUBLIC_URL becomes the app's default server (empty =
@@ -21,6 +23,37 @@ tauri_config=()
 if [[ -n "$VB_APP_IDENTIFIER" ]]; then
   [[ "$VB_APP_IDENTIFIER" =~ ^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$ ]] || { echo "VB_APP_IDENTIFIER must look like com.example.app"; exit 1; }
   tauri_config=(--config "{\"identifier\":\"$VB_APP_IDENTIFIER\"}")
+fi
+
+# Release AppImage. Built inside an Ubuntu 22.04 container (deploy/appimage/Containerfile), not on this
+# machine: an AppImage needs a glibc at least as new as the one it was built against, and a rolling
+# distro's is newer than most users have. Building there also keeps this machine's paths out of it.
+if [[ "${1:-}" == build ]]; then
+  command -v podman >/dev/null || { echo "Building the AppImage needs podman."; exit 1; }
+  image=vibebuilder-appimage
+  podman build -q -t "$image" -f "$REPO/deploy/appimage/Containerfile" "$REPO/deploy/appimage" >/dev/null
+  out="$APP/src-tauri/target/appimage"
+  mkdir -p "$out"
+  # The source goes in as a tar of the repo's files (committed or not, minus ignored ones such as
+  # node_modules and target/); caches live in named volumes so later builds are quick.
+  (cd "$REPO" && git ls-files -z -co --exclude-standard | tar --null --ignore-failed-read -T - -cf - 2>/dev/null) |
+    podman run --rm -i \
+      -e VITE_DEFAULT_SERVER="$VB_PUBLIC_URL" \
+      -v vibebuilder-appimage-cargo:/opt/cargo/registry \
+      -v vibebuilder-appimage-target:/build/desktop/src-tauri/target \
+      -v vibebuilder-appimage-npm:/root/.npm \
+      -v "$out:/out" \
+      "$image" bash -euc '
+        tar -xf - -C /build
+        cd /build/desktop
+        npm ci --no-audit --no-fund --loglevel=error
+        npx tauri build --bundles appimage "$@"
+        rm -f /out/*.AppImage
+        cp src-tauri/target/release/bundle/appimage/*.AppImage /out/
+        echo "glibc needed: $(objdump -T src-tauri/target/release/vibebuilder-ide | grep -oE "GLIBC_[0-9.]+" | sort -uV | tail -1)"
+      ' bash "${tauri_config[@]}"
+  ls -1 "$out"/*.AppImage
+  exit 0
 fi
 
 missing=()
@@ -45,7 +78,8 @@ fi
 
 # Desktop integration. Wayland windows can't carry their own icon: KDE/GNOME look up the window's
 # app id (the binary name, "vibebuilder-ide") in the installed .desktop files and the icon theme.
-# This also gives a launcher entry ("VibeBuilder IDE") that runs this script.
+# This also gives a launcher entry ("VibeBuilder IDE") that runs this script. Icon= is the file's full
+# path, not the theme name: some taskbars cache a failed theme lookup and then show no icon at all.
 install_desktop_entry() {
   local data="${XDG_DATA_HOME:-$HOME/.local/share}" icons="$APP/src-tauri/icons" id="vibebuilder-ide"
   local -A sizes=([32x32]=32x32.png [64x64]=64x64.png [128x128]=128x128.png [256x256]=128x128@2x.png [512x512]=icon.png)
@@ -62,7 +96,7 @@ Type=Application
 Name=VibeBuilder IDE
 Comment=Remote IDE for the VibeBuilder desktop server
 Exec=$REPO/bin/vb-app
-Icon=$id
+Icon=$data/icons/hicolor/512x512/apps/$id.png
 Terminal=false
 Categories=Development;IDE;
 StartupWMClass=$id"
@@ -83,10 +117,5 @@ cd "$APP"
 if [[ ! -d node_modules || package-lock.json -nt node_modules/.package-lock.json ]]; then
   echo "[vb-app] installing JS packages..."
   npm ci --no-audit --no-fund
-fi
-if [[ "${1:-}" == build ]]; then
-  npx tauri build --bundles appimage "${tauri_config[@]}"
-  ls -1 "$APP"/src-tauri/target/release/bundle/appimage/*.AppImage
-  exit 0
 fi
 exec npx tauri dev "${tauri_config[@]}"

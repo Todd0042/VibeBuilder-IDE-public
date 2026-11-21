@@ -135,15 +135,16 @@ Download `VibeBuilder IDE_0.1.0_amd64.AppImage` from [GitHub Releases](https://g
 chmod +x "VibeBuilder IDE_0.1.0_amd64.AppImage"
 ./"VibeBuilder IDE_0.1.0_amd64.AppImage"
 ```
-Enter your server's address, then on the desktop run `bin/vibebuilder pair` and type the code. The app keeps its device token in your keychain (KWallet or GNOME Keyring). For app testing, also install `waypipe` and `android-tools`.
+It runs on Ubuntu 22.04 or newer and other distros from 2022 on (Debian 12+, Fedora, Mint, Pop!_OS, Arch...). Enter your server's address, then on the desktop run `bin/vibebuilder pair` and type the code. The app keeps its device token in your keychain (KWallet or GNOME Keyring). For app testing, also install `waypipe` and `android-tools`.
 
 ### 🛠️ Run the Laptop App from Source
 ```bash
 git clone https://github.com/Todd0042/VibeBuilder-IDE-public.git
 cd VibeBuilder-IDE-public
 bin/vb-app            # checks for rust, nodejs/npm, webkit2gtk-4.1 and libsoup3; first run compiles (a few minutes)
-bin/vb-app build      # or build your own AppImage
+bin/vb-app build      # or build your own AppImage (needs only Podman)
 ```
+`bin/vb-app build` builds inside an Ubuntu 22.04 container ([deploy/appimage/Containerfile](deploy/appimage/Containerfile)), so the AppImage works on older distros too, not just on the one you built it on.
 `bin/vb-app` also installs a "VibeBuilder IDE" launcher and icon, since Wayland takes a window's icon from its `.desktop` entry. If the clone has a `vibebuilder.env`, its `VB_PUBLIC_URL` becomes the app's default server.
 
 ---

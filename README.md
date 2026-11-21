@@ -130,10 +130,10 @@ bin/vibebuilder auth-qr
 Then make `VB_PUBLIC_URL` reach `127.0.0.1:8765` over HTTPS. With Cloudflare Tunnel, see [deploy/cloudflared.example.yml](deploy/cloudflared.example.yml). Behind any other reverse proxy, set `VB_TRUST_CF=0`.
 
 ### 🐧 Laptop App: Linux AppImage
-Download `VibeBuilder IDE_0.1.0_amd64.AppImage` from [GitHub Releases](https://github.com/Todd0042/VibeBuilder-IDE-public/releases):
+Download `VibeBuilder.IDE_0.1.0_amd64.AppImage` from [GitHub Releases](https://github.com/Todd0042/VibeBuilder-IDE-public/releases):
 ```bash
-chmod +x "VibeBuilder IDE_0.1.0_amd64.AppImage"
-./"VibeBuilder IDE_0.1.0_amd64.AppImage"
+chmod +x VibeBuilder.IDE_0.1.0_amd64.AppImage
+./VibeBuilder.IDE_0.1.0_amd64.AppImage
 ```
 It runs on Ubuntu 22.04 or newer and other distros from 2022 on (Debian 12+, Fedora, Mint, Pop!_OS, Arch...). Enter your server's address, then on the desktop run `bin/vibebuilder pair` and type the code. The app keeps its device token in your keychain (KWallet or GNOME Keyring). For app testing, also install `waypipe` and `android-tools`.
 

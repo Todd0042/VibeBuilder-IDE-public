@@ -8,7 +8,7 @@
 
 # 🛠️ VibeBuilder IDE
 
-[![Version](https://img.shields.io/badge/Version-0.1.0-ff8a3d.svg)](https://github.com/Todd0042/VibeBuilder-IDE-public/releases)
+[![Version](https://img.shields.io/github/v/release/Todd0042/VibeBuilder-IDE-public?label=Version&color=ff8a3d)](https://github.com/Todd0042/VibeBuilder-IDE-public/releases)
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-00f0ff.svg)](LICENSE)
 [![Platform: Linux](https://img.shields.io/badge/Platform-Linux%20(AppImage)-orange.svg)](https://github.com/Todd0042/VibeBuilder-IDE-public/releases)
 [![App: Tauri 2 + Svelte 5](https://img.shields.io/badge/App-Tauri%202%20%2B%20Svelte%205-8a6cff.svg)]()
@@ -130,11 +130,11 @@ bin/vibebuilder auth-qr
 Then make `VB_PUBLIC_URL` reach `127.0.0.1:8765` over HTTPS. With Cloudflare Tunnel, see [deploy/cloudflared.example.yml](deploy/cloudflared.example.yml). Behind any other reverse proxy, set `VB_TRUST_CF=0`.
 
 ### 🐧 Laptop App: Linux AppImage
-Download `VibeBuilder.IDE_0.1.0_amd64.AppImage` from [GitHub Releases](https://github.com/Todd0042/VibeBuilder-IDE-public/releases):
+Download the latest `VibeBuilder-IDE_<version>_amd64.AppImage` and `SHA256SUMS` from [GitHub Releases](https://github.com/Todd0042/VibeBuilder-IDE-public/releases):
 ```bash
-sha256sum -c SHA256SUMS   # optional: check the download (SHA256SUMS is on the same release)
-chmod +x VibeBuilder.IDE_0.1.0_amd64.AppImage
-./VibeBuilder.IDE_0.1.0_amd64.AppImage
+sha256sum -c SHA256SUMS   # optional: check the download
+chmod +x VibeBuilder-IDE_*_amd64.AppImage
+./VibeBuilder-IDE_*_amd64.AppImage
 ```
 It runs on Ubuntu 22.04 or newer and other distros from 2022 on (Debian 12+, Fedora, Mint, Pop!_OS, Arch...). Enter your server's address, then on the desktop run `bin/vibebuilder pair` and type the code. The app keeps its device token in your keychain (KWallet or GNOME Keyring). For app testing, also install `waypipe` and `android-tools`.
 
@@ -153,7 +153,7 @@ bin/vb-app build      # or build your own AppImage (needs only Podman)
 
 # Part 2 — Technical Documentation & Architecture Reference
 
-> *The sections below are an engineering reference for VibeBuilder IDE `v0.1.0`: how the pieces fit, what protects what, and every setting.*
+> *The sections below are an engineering reference for VibeBuilder IDE: how the pieces fit, what protects what, and every setting.*
 
 ---
 

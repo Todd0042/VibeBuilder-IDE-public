@@ -13,17 +13,24 @@
 #
 # From vibebuilder.env (optional on a laptop): VB_PUBLIC_URL becomes the app's default server (empty =
 # the sign-in screen asks), and VB_APP_IDENTIFIER, if set, replaces the app id in tauri.conf.json.
+# VB_APP_VERSION (e.g. 0.1.1), if set, replaces the version (the release workflow sets it from the tag).
 set -euo pipefail
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 APP="$REPO/desktop"
 # shellcheck source=lib/vbconfig.sh
 . "$REPO/bin/lib/vbconfig.sh"
 export VITE_DEFAULT_SERVER="$VB_PUBLIC_URL"
-tauri_config=()
+overrides=()
 if [[ -n "$VB_APP_IDENTIFIER" ]]; then
   [[ "$VB_APP_IDENTIFIER" =~ ^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$ ]] || { echo "VB_APP_IDENTIFIER must look like com.example.app"; exit 1; }
-  tauri_config=(--config "{\"identifier\":\"$VB_APP_IDENTIFIER\"}")
+  overrides+=("\"identifier\":\"$VB_APP_IDENTIFIER\"")
 fi
+if [[ -n "${VB_APP_VERSION:-}" ]]; then
+  [[ "$VB_APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "VB_APP_VERSION must look like 1.2.3"; exit 1; }
+  overrides+=("\"version\":\"$VB_APP_VERSION\"")
+fi
+tauri_config=()
+((${#overrides[@]})) && tauri_config=(--config "{$(IFS=,; echo "${overrides[*]}")}")
 
 # Release AppImage. Built inside an Ubuntu 22.04 container (deploy/appimage/Containerfile), not on this
 # machine: an AppImage needs a glibc at least as new as the one it was built against, and a rolling

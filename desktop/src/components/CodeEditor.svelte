@@ -77,14 +77,21 @@
         const from = Math.min(l.from + col, l.to);
         view.dispatch({ selection: { anchor: from, head: Math.min(from + length, l.to) }, scrollIntoView: true,
           effects: EditorView.scrollIntoView(from, { y: "center" }) });
-        view.focus();
+        focusUnlessDialog();
       },
       focus: () => view?.focus(),
     });
     if (active) {
       cursor.set(tab.path, 1, 1, 1, 0);
-      requestAnimationFrame(() => view?.focus());
+      requestAnimationFrame(focusUnlessDialog);
     }
+  }
+
+  // Files open asynchronously: by the time one has loaded (or jumped to a search hit), a dialog such as
+  // Go to File may have opened. Taking focus then would send its typing and Enter into the editor.
+  function focusUnlessDialog() {
+    if (document.activeElement?.closest('[role="dialog"], [role="alertdialog"]')) return;
+    view?.focus();
   }
 
   onMount(make);

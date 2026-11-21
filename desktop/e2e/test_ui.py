@@ -145,7 +145,19 @@ def test_working_session(app):
         expect(page.locator(".banner.conflict")).to_have_count(0)
         wait_for(lambda: (ws / "proj" / "src" / "app.py").read_text().startswith("# mine\n"), "your version saved over the agent's")
 
-        # Search the project, jump to a match.
+        # Search the project, jump to a match. util.py loads slowly here (a slow connection), so Go to File
+        # below opens before it arrives: the editor must not take the keyboard away from that dialog.
+        page.evaluate("""() => {
+          const real = window.fetch;
+          window.fetch = async (input, init) => {
+            const url = String(input instanceof Request ? input.url : input);
+            if (url.includes("/api/v1/fs/file?") && url.includes("util.py") && !window.__slowDone) {
+              window.__slowDone = true;
+              await new Promise((r) => setTimeout(r, 1500));
+            }
+            return real(input, init);
+          };
+        }""")
         page.keyboard.press("Control+Shift+F")
         page.locator(".qbox input").fill("return a + b")
         match = page.locator(".match").first
@@ -154,10 +166,13 @@ def test_working_session(app):
         match.click()
         expect(page.locator(".area .tab.active")).to_contain_text("util.py")
 
-        # Quick open.
+        # Quick open, while util.py is still loading.
         page.keyboard.press("Control+p")
         page.locator(".box input").fill("readme")
         expect(page.locator(".box .row").first).to_contain_text("README.md")
+        page.wait_for_function("() => window.__slowDone")
+        page.wait_for_timeout(1700)  # util.py has now loaded and jumped to the match
+        expect(page.locator(".box input")).to_be_focused()
         page.keyboard.press("Enter")
         expect(page.locator(".box")).to_have_count(0)
         expect(page.locator(".area .tab.active")).to_contain_text("README.md")

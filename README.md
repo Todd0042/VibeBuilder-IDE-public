@@ -132,6 +132,7 @@ Then make `VB_PUBLIC_URL` reach `127.0.0.1:8765` over HTTPS. With Cloudflare Tun
 ### 🐧 Laptop App: Linux AppImage
 Download `VibeBuilder.IDE_0.1.0_amd64.AppImage` from [GitHub Releases](https://github.com/Todd0042/VibeBuilder-IDE-public/releases):
 ```bash
+sha256sum -c SHA256SUMS   # optional: check the download (SHA256SUMS is on the same release)
 chmod +x VibeBuilder.IDE_0.1.0_amd64.AppImage
 ./VibeBuilder.IDE_0.1.0_amd64.AppImage
 ```

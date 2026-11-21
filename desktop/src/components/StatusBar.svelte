@@ -6,6 +6,8 @@
   import { cursor } from "../lib/cursor.svelte";
   import { ui } from "../lib/ui.svelte";
   import { languageName } from "../lib/codemirror";
+  import { checkpoints } from "../lib/checkpoints.svelte";
+  import { problems } from "../lib/problems.svelte";
 
   let now = $state(Date.now());
   $effect(() => { const t = setInterval(() => (now = Date.now()), 1000); return () => clearInterval(t); });
@@ -21,6 +23,22 @@
   </span>
   {#if tree.branch}
     <span class="item" title="Git branch in the builder"><Icon name="branch" size={13} /> {tree.branch}{tree.ahead ? ` ↑${tree.ahead}` : ""}{tree.behind ? ` ↓${tree.behind}` : ""}</span>
+  {/if}
+  {#if problems.items.length}
+    <button class="item link warn" title="Problems the IDE server ran into — click for details" onclick={() => { ui.side = "devices"; ui.sideOpen = true; }}>
+      <Icon name="warning" size={13} /> {problems.items.length} problem{problems.items.length === 1 ? "" : "s"}
+    </button>
+  {/if}
+  {#if tree.gitError}
+    <span class="item warn git-error" title={tree.gitError}><Icon name="warning" size={13} /> git error</span>
+  {/if}
+  {#if tree.branch && checkpoints.label}
+    {#key now}
+      <button class="item link checkpoint" class:off={!checkpoints.info?.enabled} title={checkpoints.detail}
+        disabled={checkpoints.busy || !checkpoints.info?.enabled} onclick={() => checkpoints.now()}>
+        <Icon name="clock" size={13} /> {checkpoints.busy ? "Checkpointing…" : checkpoints.label}
+      </button>
+    {/key}
   {/if}
   <span class="grow"></span>
   {#if autosaveIn !== null}
@@ -41,6 +59,8 @@
   .link { border: 0; background: none; color: inherit; font-size: inherit; }
   .link:hover { background: #ffffff10; color: var(--text); }
   .grow { flex: 1; }
+  .checkpoint.off { opacity: .6; }
+  .warn { color: var(--warn); }
   .led { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
   .conn.off { color: var(--warn); }
   .conn.off .led { background: var(--warn); animation: blink 1s infinite; }

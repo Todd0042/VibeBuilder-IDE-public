@@ -14,6 +14,7 @@ something outside the workspace; contents are read through the Jail too.
 
 from __future__ import annotations
 
+import errno
 import os
 import stat as st
 import threading
@@ -44,7 +45,9 @@ def skip_name(name: str) -> bool:
 
 class Recorder:
     def __init__(self, jail: Jail, store: HistoryStore, *, settle_sec: float, quiet_sec: float, max_file_bytes: int,
-                 attribute: Callable[[float, float, list[str]], str], emit: Callable[[str, dict], None]):
+                 attribute: Callable[[float, float, list[str]], str], emit: Callable[[str, dict], None],
+                 changed: Callable[[str, str], None] = lambda path, who: None,
+                 problem: Callable[..., None] = lambda key, message, detail="", fix="": None):
         self.jail = jail
         self.store = store
         self.settle_sec = settle_sec
@@ -52,6 +55,8 @@ class Recorder:
         self.max_file_bytes = max_file_bytes
         self.attribute = attribute  # (started, ended, paths) -> "claude" | "agy" | "shell" | "unknown"
         self.emit = emit  # (event, payload) -> live update to the apps
+        self.changed = changed  # (path, who) after each recorded change: checkpoints follow these
+        self.problem = problem  # (key, message, detail, fix): reported to whoever runs the IDE (problems.py)
         self._inotify = INotify()
         self._wd: dict[int, str] = {}  # watch descriptor -> folder (relative)
         self._pending: dict[str, float] = {}  # path -> last event time
@@ -96,8 +101,16 @@ class Recorder:
         try:
             wd = self._inotify.add_watch(f"/proc/self/fd/{fd}", WATCH_FLAGS)
             self._wd[wd] = rel
-        except OSError:
-            pass  # out of watches, or gone already
+        except OSError as exc:
+            if exc.errno == errno.ENOSPC:  # the system's limit on watched folders
+                self.problem("history-watch-limit", "Change history stopped following new folders: the system's limit on "
+                             "watched folders is reached, so agent edits in them aren't recorded.",
+                             f"inotify add_watch failed for {rel or '/'}: {exc.strerror}",
+                             "On the desktop: echo fs.inotify.max_user_watches=1048576 | sudo tee /etc/sysctl.d/90-vibebuilder.conf "
+                             "&& sudo sysctl --system, then vibebuilder restart")
+            elif exc.errno not in (errno.ENOENT, errno.ENOTDIR):  # gone already: nothing to watch
+                self.problem(f"history-watch:{rel}", f"Change history can't follow the folder {rel or '/'}",
+                             f"inotify add_watch: {exc.strerror}")
         finally:
             os.close(fd)
 
@@ -151,8 +164,13 @@ class Recorder:
         try:
             data, s = self.jail.read_file(path, self.max_file_bytes)
         except JailError as exc:
-            return None if exc.status == 404 else False
-        except OSError:
+            if exc.denied:
+                self.problem(f"history-record:{path}", f"Change history couldn't read {path}, so its changes aren't recorded",
+                             f"PermissionError: {exc}", "Check the file's permissions (ls -l).")
+            return None if exc.status == 404 else False  # gone, or deliberately not recorded (symlink, too large)
+        except OSError as exc:
+            self.problem(f"history-record:{path}", f"Change history couldn't read {path}, so its changes aren't recorded",
+                         f"{type(exc).__name__}: {exc.strerror or exc}", "Check the file's permissions (ls -l).")
             return False
         if not st.S_ISREG(s.st_mode):
             return False
@@ -225,8 +243,9 @@ class Recorder:
             for path in ready:
                 try:
                     self._settle(path)
-                except Exception:
-                    pass  # one unreadable file must not stop the recorder
+                except Exception as exc:  # one unreadable file must not stop the recorder, but it's reported
+                    self.problem(f"history-record:{path}", f"Change history couldn't record {path}",
+                                 f"{type(exc).__name__}: {exc}")
             with self._lock:
                 close = self._cs is not None and not busy and now - self._cs_last >= self.quiet_sec
                 cs, started, last, paths = self._cs, self._cs_started, self._cs_last, list(self._cs_paths)
@@ -241,6 +260,8 @@ class Recorder:
                 except Exception:
                     source = "unknown"
                 self.store.close_changeset(cs, source)
+                for p in set(paths):
+                    self.changed(p, source)
                 info = self.store.changeset(cs)
                 if info:
                     self.emit("changeset", {**info, "file_count": len(set(paths))})
@@ -259,6 +280,7 @@ class Recorder:
                 del self._expected[path]
         if own:
             self.store.record(path, h, "you", None)
+            self.changed(path, "you")
             return
         with self._lock:
             if self._cs is None:

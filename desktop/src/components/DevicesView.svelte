@@ -4,9 +4,12 @@
   import { relativeTime } from "@core/index";
   import { session } from "../lib/session.svelte";
   import { ui } from "../lib/ui.svelte";
+  import { checkpoints } from "../lib/checkpoints.svelte";
+  import { problems } from "../lib/problems.svelte";
 
   let devices = $state<DeviceInfo[]>([]);
   let max = $state(3);
+  let usageError = $state("");
   let usage = $state<{ stored_bytes: number; cap_bytes: number; versions: number } | null>(null);
 
   async function load() {
@@ -19,7 +22,10 @@
     }
     try {
       usage = await session.api.historyUsage();
-    } catch { /* optional */ }
+      usageError = "";
+    } catch (e) {
+      usageError = e instanceof Error ? e.message : String(e);
+    }
   }
 
   async function revoke(d: DeviceInfo) {
@@ -40,6 +46,17 @@
 
 <div class="head"><span class="label">DEVICES</span></div>
 <div class="body">
+  {#if problems.items.length}
+    <h4 class="problems-title">Problems</h4>
+    {#each problems.items as p (p.key)}
+      <div class="problem">
+        <div>{p.message}</div>
+        {#if p.fix}<div class="small"><b>Fix:</b> {p.fix}</div>{/if}
+        <details class="small faint"><summary>Details{p.count > 1 ? ` (happened ${p.count} times, last ${relativeTime(p.last)})` : ""}</summary><code>{p.detail}</code></details>
+        <button class="btn small" onclick={() => problems.dismiss(p.key)}>Dismiss</button>
+      </div>
+    {/each}
+  {/if}
   <p class="faint">Up to {max} devices can be paired. To add one, run <code>vibebuilder pair</code> on the desktop.</p>
   {#each devices as d (d.id)}
     <div class="dev" class:current={d.current}>
@@ -50,10 +67,27 @@
     </div>
   {/each}
 
+  {#if checkpoints.info}
+    <h4>Checkpoints</h4>
+    <label class="toggle">
+      <input type="checkbox" checked={checkpoints.info.enabled} onchange={(e) => checkpoints.setEnabled(e.currentTarget.checked)} />
+      Automatic checkpoint commits for <b>{checkpoints.project}</b>
+    </label>
+    <p class="faint small">A few minutes after changes settle, the work in progress is committed to the branch
+      <code>checkpoints/&lt;branch&gt;</code>, with a message Claude writes from the changes. Your branch, staged changes and files
+      aren't touched, nothing is pushed, and secrets (<code>.env</code>, keys) and dependency folders are left out.
+      It starts over on top of each real commit. To get a file back: <code>git checkout checkpoints/main -- path</code>.</p>
+    <button class="btn small" disabled={!checkpoints.info.enabled || checkpoints.busy} onclick={() => checkpoints.now()}>Checkpoint now</button>
+  {/if}
+
   <h4>Session</h4>
   <p class="faint small">Signed in as <b>{session.deviceName}</b>. You sign in when the app opens, and closing it signs you out. If the app disappears without signing out (crash, laptop asleep), the server ends the session after 10 minutes.</p>
   <button class="btn small" onclick={() => session.lock("Locked.")}>Lock now</button>
 
+  {#if usageError}
+    <h4>Change history</h4>
+    <p class="small warn-text">Couldn't load the change history's size: {usageError}</p>
+  {/if}
   {#if usage}
     <h4>Change history</h4>
     <div class="meter"><div style:width="{Math.min(100, (usage.stored_bytes / usage.cap_bytes) * 100)}%"></div></div>
@@ -87,4 +121,8 @@
   .meter div { height: 100%; background: var(--accent-2); }
   .keys { display: grid; grid-template-columns: 1fr; gap: 5px; font-size: 12px; color: var(--dim); }
   code { font-family: var(--mono); font-size: 11.5px; background: #0e1015; padding: 1px 5px; border-radius: 4px; color: var(--text); }
+  .toggle { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  .problem { border: 1px solid var(--warn); border-radius: 6px; padding: 8px; margin: 6px 0; display: grid; gap: 4px; }
+  .problem code { white-space: pre-wrap; word-break: break-word; }
+  .warn-text { color: var(--warn); }
 </style>

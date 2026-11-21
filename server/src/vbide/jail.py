@@ -36,11 +36,13 @@ _libc.syscall.restype = ctypes.c_long
 
 
 class JailError(Exception):
-    """A path that is not allowed, or doesn't exist. `status` is the HTTP status to answer with."""
+    """A path that is not allowed, or doesn't exist. `status` is the HTTP status to answer with; `denied` is set when
+    the filesystem refused access (permissions), as opposed to a path the jail refuses by design (symlinks...)."""
 
-    def __init__(self, message: str, status: int = 400):
+    def __init__(self, message: str, status: int = 400, denied: bool = False):
         super().__init__(message)
         self.status = status
+        self.denied = denied
 
 
 def clean_rel(rel: str) -> str:
@@ -84,7 +86,7 @@ class Jail:
             if err == errno.ENOTDIR:
                 raise JailError("Not a folder", 400)
             if err in (errno.EACCES, errno.EPERM):
-                raise JailError("Permission denied", 403)
+                raise JailError("Permission denied", 403, denied=True)
             raise JailError(os.strerror(err), 400)
         return fd
 

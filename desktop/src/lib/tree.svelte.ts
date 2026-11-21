@@ -10,6 +10,8 @@ class TreeState {
   selected = $state<string | null>(null);
   git = $state<Record<string, string>>({});
   branch = $state("");
+  /** Why git status isn't shown, when git itself failed (not just "this isn't a repo"). */
+  gitError = $state("");
   ahead = $state(0);
   behind = $state(0);
   private pending = new Set<string>();
@@ -93,10 +95,12 @@ class TreeState {
       }
       this.git = map;
       this.branch = g.repo ? g.branch ?? "" : "";
+      this.gitError = g.error ?? "";
       this.ahead = g.ahead ?? 0;
       this.behind = g.behind ?? 0;
-    } catch {
-      /* the builder may be restarting; try again on the next change */
+    } catch (e) {
+      // Usually the builder restarting: shown in the status bar until the next refresh works.
+      this.gitError = `Couldn't get git status from the builder: ${e instanceof Error ? e.message : String(e)}`;
     }
   }
 }

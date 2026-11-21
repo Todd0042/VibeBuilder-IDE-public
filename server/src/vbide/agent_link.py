@@ -46,8 +46,8 @@ class AgentLink:
             r = await c.get(self.http_base + path, params=params, headers=self._headers)
         return self._check(r)
 
-    async def post(self, path: str, body: dict) -> Any:
-        async with httpx.AsyncClient(timeout=10) as c:
+    async def post(self, path: str, body: dict, timeout: float = 10) -> Any:
+        async with httpx.AsyncClient(timeout=timeout) as c:
             r = await c.post(self.http_base + path, json=body, headers=self._headers)
         return self._check(r)
 
@@ -235,7 +235,8 @@ async def git_status(project: str, _: SessionDep, request: Request) -> dict:
         raise HTTPException(exc.status, str(exc))
     data = await svc.agent.get("/git/status", project=project)
     if not isinstance(data, dict) or not data.get("repo"):
-        return {"repo": False}
+        err = data.get("error") if isinstance(data, dict) else None
+        return {"repo": False, "error": str(err)[:500]} if err else {"repo": False}
     files = []
     for f in (data.get("files") or [])[:5000]:
         if isinstance(f, dict) and isinstance(f.get("path"), str) and isinstance(f.get("xy"), str) and _XY.match(f["xy"]):

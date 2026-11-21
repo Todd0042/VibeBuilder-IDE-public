@@ -15,7 +15,11 @@ export interface SearchOptions {
 }
 export interface SearchMatch { line: number; text: string; ranges: [number, number][] }
 export interface SearchFile { path: string; matches: SearchMatch[] }
-export interface SearchResult { files: SearchFile[]; match_count: number; truncated: boolean }
+export interface SearchResult {
+  files: SearchFile[]; match_count: number; truncated: boolean;
+  /** Files ripgrep couldn't search (first 20) and how many there were; matches in non-UTF-8 files (not shown). */
+  skipped?: { path: string; reason: string }[]; skipped_count?: number; not_text_matches?: number;
+}
 
 export type Source = "claude" | "agy" | "shell" | "unknown" | "offline" | "restore" | "you" | "agent";
 export interface ChangesetSummary {
@@ -36,7 +40,18 @@ export type TerminalKind = "claude" | "agy" | "shell" | "run";
 export interface TerminalInfo { id: string; kind: TerminalKind; title: string; cwd: string; alive: boolean; exit_code: number | null; created: number }
 
 export interface GitFile { path: string; xy: string }
-export interface GitStatus { repo: boolean; root?: string; branch?: string; ahead?: number; behind?: number; files?: GitFile[] }
+export interface GitStatus { repo: boolean; error?: string; root?: string; branch?: string; ahead?: number; behind?: number; files?: GitFile[] }
+
+/** One repo's result in a checkpoint (an automatic commit on the side branch checkpoints/<branch>). */
+export interface CheckpointResult {
+  repo: string; status: "committed" | "unchanged" | "skipped" | "failed"; branch?: string; ref?: string; commit?: string;
+  title?: string; reason?: string; files?: number; rolled: boolean; left_out: { path: string; reason: string }[];
+}
+export interface CheckpointRun { at: number; results: CheckpointResult[] }
+export interface CheckpointInfo { enabled: boolean; delay_sec: number; pending_since: number | null; last: CheckpointRun | null }
+
+/** Something the server ran into in the background (problems.py); secrets are masked. */
+export interface Problem { key: string; message: string; detail: string; fix: string; first: number; last: number; count: number }
 
 export interface DeviceInfo { id: string; name: string; created: number; last_seen: number; last_ip: string; current: boolean }
 
@@ -45,4 +60,6 @@ export type LiveEvent =
   | { event: "fs"; paths: string[] }
   | ({ event: "changeset" } & Partial<ChangesetSummary>)
   | { event: "changeset.open"; id: number; started: number }
-  | { event: "terminals" };
+  | { event: "terminals" }
+  | ({ event: "checkpoint"; project: string } & CheckpointRun)
+  | ({ event: "problem" } & Problem);

@@ -7,25 +7,28 @@ OpenAPI, no health page (an unknown path and an unsigned request both get the sa
 from __future__ import annotations
 
 import asyncio
+import logging
 import contextlib
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from . import agent_link, files, live, search, tunnels
+from . import agent_link, agent_rules, checkpoints, files, live, problems, search, tunnels
 from .agent_link import AgentLink
 from .auth import routes as auth_routes
 from .auth.devices import DeviceStore
 from .auth.guard import Guard
 from .auth.sessions import SessionStore
 from .auth.totp import Totp
+from .checkpoints import Checkpointer
 from .config import Settings
 from .history import routes as history_routes
 from .history.recorder import Recorder
 from .history.store import HistoryStore
 from .jail import Jail
 from .live import LiveHub
+from .problems import Problems
 from .services import Services
 
 MAX_BODY = 12 * 1024 * 1024
@@ -33,18 +36,26 @@ MAX_BODY = 12 * 1024 * 1024
 
 def build_services(settings: Settings) -> Services:
     settings.secrets_dir.mkdir(parents=True, exist_ok=True)
+    for what, path, effect in (("authenticator secret", settings.totp_secret_file, "nobody can sign in"),
+                               ("builder link token", settings.agent_token_file, "terminals, git and checkpoints fail")):
+        if not settings.read_secret(path):  # said loudly at startup: without it the app can't even show the problem
+            logging.getLogger("vbide").error("Missing %s (%s): %s. Fix: vibebuilder install (or restore the file).",
+                                             what, path, effect)
     jail = Jail(settings.workspace)
     hub = LiveHub()
     history = HistoryStore(settings.history_dir, settings.history_cap_bytes)
     agent = AgentLink(settings.agent_url, settings.read_secret(settings.agent_token_file))
+    probs = Problems(hub)
+    checkpointer = Checkpointer(agent, hub, settings.checkpoints_file, settings.checkpoint_delay_sec, probs)
     recorder = Recorder(jail, history, settle_sec=settings.file_settle_sec, quiet_sec=settings.changeset_quiet_sec,
-                        max_file_bytes=settings.history_max_file_bytes, attribute=agent.attribute, emit=hub.publish)
+                        max_file_bytes=settings.history_max_file_bytes, attribute=agent.attribute, emit=hub.publish,
+                        changed=checkpointer.touched, problem=probs.report)
     return Services(
         settings=settings, jail=jail, totp=Totp(settings.read_secret(settings.totp_secret_file)),
         devices=DeviceStore(settings.auth_db, settings.pair_dir, settings.max_devices, settings.pair_code_ttl_sec),
         sessions=SessionStore(settings.session_idle_sec), guard=Guard(
             settings.max_failures_per_ip, settings.lockout_sec, settings.max_global_failures),
-        live=hub, history=history, recorder=recorder, agent=agent)
+        live=hub, history=history, recorder=recorder, agent=agent, checkpoints=checkpointer, problems=probs)
 
 
 def create_app(settings: Settings | None = None, svc: Services | None = None) -> FastAPI:
@@ -64,9 +75,10 @@ def create_app(settings: Settings | None = None, svc: Services | None = None) ->
                     if not svc.devices.exists(dev):
                         svc.sessions.end_device(dev)
 
-        task = asyncio.create_task(sweeper())
+        tasks = [asyncio.create_task(sweeper()), asyncio.create_task(svc.checkpoints.run())]
         yield
-        task.cancel()
+        for task in tasks:
+            task.cancel()
         svc.recorder.stop()
 
     app = FastAPI(title="VibeBuilder-IDE", version="1", docs_url=None, redoc_url=None, openapi_url=None,
@@ -89,7 +101,7 @@ def create_app(settings: Settings | None = None, svc: Services | None = None) ->
         return response
 
     for r in (auth_routes.router, files.router, search.router, history_routes.router, agent_link.router,
-              live.router, tunnels.router):
+              live.router, tunnels.router, checkpoints.router, agent_rules.router, problems.router):
         app.include_router(r)
     return app
 
@@ -99,12 +111,19 @@ def openapi_schema() -> dict:
     from fastapi.openapi.utils import get_openapi
 
     app = FastAPI()
-    for r in (auth_routes.router, files.router, search.router, history_routes.router, agent_link.router):
+    for r in (auth_routes.router, files.router, search.router, history_routes.router, agent_link.router,
+              checkpoints.router, agent_rules.router, problems.router):
         app.include_router(r)
     return get_openapi(title="VibeBuilder-IDE", version="1", routes=app.routes)
 
 
+_app: FastAPI | None = None
+
+
 def __getattr__(name: str):  # `uvicorn vbide.app:app` builds the app lazily, so imports stay cheap
+    global _app
     if name == "app":
-        return create_app()
+        if _app is None:  # once: uvicorn may look the attribute up more than once, and a second build would
+            _app = create_app()  # repeat startup work (and report startup problems into an app nobody serves)
+        return _app
     raise AttributeError(name)

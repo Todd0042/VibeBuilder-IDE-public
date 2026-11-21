@@ -18,6 +18,8 @@
   import { editors } from "../lib/editors.svelte";
   import { changes } from "../lib/changes.svelte";
   import { terminals } from "../lib/terminals.svelte";
+  import { checkpoints } from "../lib/checkpoints.svelte";
+  import { problems } from "../lib/problems.svelte";
   import { focusIn, keyName, restoreZoom, runShortcut } from "../lib/commands";
 
   async function loadProjects() {
@@ -48,6 +50,8 @@
       void tree.refreshGit();
     }
     void changes.reload();
+    void checkpoints.load();
+    void problems.load();
     void terminals.refresh();
     // anything that changed while locked
     void editors.onDiskChange(editors.tabs.filter((t) => t.kind === "file").map((t) => (t as { path: string }).path));
@@ -66,6 +70,11 @@
         changes.onOpened(e.id, e.started);
       } else if (e.event === "terminals") {
         void terminals.refresh();
+      } else if (e.event === "problem") {
+        problems.onProblem(e);
+      } else if (e.event === "checkpoint") {
+        checkpoints.onCheckpoint(e);
+        tree.scheduleGit(100);
       }
     });
     const offOut = session.onSignedOut(() => terminals.disconnectAll());
@@ -88,6 +97,8 @@
     tree.expanded[p] = true;
     void tree.load(p).then(() => tree.refreshGit());
     void changes.reload();
+    void checkpoints.load();
+    void checkpoints.ensureRules();
   });
 
   function key(e: KeyboardEvent) {

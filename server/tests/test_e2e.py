@@ -21,7 +21,7 @@ import httpx
 import pyotp
 import pytest
 
-from stack import fresh_code, pair_code, running_stack
+from stack import fresh_code, pair_code, running_stack, signed_in
 import websockets
 
 
@@ -196,16 +196,7 @@ def test_lockout(stack):
 
 
 def _signed_in(stack, ip: str) -> tuple[httpx.Client, str]:
-    """A newly paired device, signed in (waits for a fresh 30-second code if needed)."""
-    c = httpx.Client(base_url=stack["url"], timeout=15, headers={"cf-connecting-ip": ip})
-    r = c.post("/api/v1/auth/pair", json={"code": _pair_code(stack), "device_name": "Tunnel test"})
-    assert r.status_code == 200, r.text
-    used = stack.setdefault("used_steps", set())
-    r = c.post("/api/v1/auth/login", json={"device_token": r.json()["device_token"], "code": _fresh_code(stack["totp"], used)})
-    assert r.status_code == 200, r.text
-    session = r.json()["session"]
-    c.headers["authorization"] = f"Bearer {session}"
-    return c, session
+    return signed_in(stack, ip)
 
 
 def test_tunnels(stack):

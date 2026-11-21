@@ -13,6 +13,8 @@ const LAST_CMD = "vb.runCmd:"; // per folder
 class Testing {
   /** Ports something listens on in the builder. */
   builderPorts = $state<{ port: number; process: string }[]>([]);
+  /** Why the builder's port list couldn't be refreshed ("" when it could). */
+  portsError = $state("");
   /** remote (builder) port -> local (laptop) port */
   forwards = $state<Record<number, number>>({});
   adb = $state(false);
@@ -32,7 +34,13 @@ class Testing {
   }
 
   async refresh() {
-    try { this.builderPorts = (await session.api.ports()).ports; } catch { /* builder restarting */ }
+    try {
+      this.builderPorts = (await session.api.ports()).ports;
+      this.portsError = "";
+    } catch (e) {
+      // Usually the builder restarting: the list below is the last one that worked, and the Ports tab says so.
+      this.portsError = e instanceof Error ? e.message : String(e);
+    }
     this.forwards = Object.fromEntries(await portForwards());
     this.adb = await adbStatus();
   }

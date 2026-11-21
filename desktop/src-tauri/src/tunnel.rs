@@ -295,9 +295,19 @@ impl Tunnels {
     // ---- the phone (adb) ------------------------------------------------------------------------
     /// The builder's `adb` talks to this laptop's adb server, so a phone plugged in here shows up there.
     pub async fn adb_connect(&self) -> Result<(), String> {
-        let ok = Command::new("adb").arg("start-server").status().await.map(|s| s.success()).unwrap_or(false);
-        if !ok {
-            return Err("adb isn't installed on this laptop (sudo pacman -S android-tools)".into());
+        // Tell "not installed" apart from "installed but failing", and never hang the button on a stuck adb.
+        let run = Command::new("adb").arg("start-server").output();
+        match tokio::time::timeout(Duration::from_secs(10), run).await {
+            Err(_) => return Err("adb start-server didn't finish within 10 seconds (try: adb kill-server)".into()),
+            Ok(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Err("adb isn't installed on this laptop (sudo pacman -S android-tools)".into())
+            }
+            Ok(Err(e)) => return Err(format!("couldn't run adb: {e}")),
+            Ok(Ok(out)) if !out.status.success() => {
+                let why = String::from_utf8_lossy(&out.stderr);
+                return Err(format!("adb start-server failed ({}): {}", out.status, why.trim()));
+            }
+            Ok(Ok(_)) => {}
         }
         self.listen("adb", json!({"tcp": 5037}), Target::Tcp(5037)).await.map(|_| ())
     }

@@ -26,7 +26,9 @@ TIMEOUT_SEC = 15
 _BASE = ["rg", "--no-config", "--no-follow", "--hidden", "--glob", "!.git", "--max-filesize", "4M"]
 
 
-async def _rg(svc, root: str, args: list[str]):
+async def _rg(svc, root: str, args: list[str], errors: bool = False):
+    """ripgrep in `root` (through the jail). With errors=True its stderr is a pipe: per-file errors such as
+    "Permission denied" (the caller must read it alongside stdout)."""
     try:
         fd = svc.jail.fchdir_to(root)
     except JailError as exc:
@@ -34,7 +36,7 @@ async def _rg(svc, root: str, args: list[str]):
     try:
         proc = await asyncio.create_subprocess_exec(
             *_BASE, *args, cwd=f"/proc/self/fd/{fd}", pass_fds=(fd,),
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE if errors else asyncio.subprocess.DEVNULL,
             env={"PATH": os.environ.get("PATH", "/usr/bin"), "LANG": "C.UTF-8"})
     finally:
         os.close(fd)
@@ -77,9 +79,26 @@ async def search(body: SearchBody, _: SessionDep, request: Request) -> dict:
             args += ["--glob", "!" + g.lstrip("!")]
     args += ["--regexp", body.query, "--", "."]
 
-    proc = await _rg(svc, root, args)
+    proc = await _rg(svc, root, args, errors=True)
     files: dict[str, dict] = {}
-    count, truncated = 0, False
+    count, truncated, not_text = 0, False, 0
+    skipped: list[dict] = []
+    skipped_count = 0
+
+    async def read_errors() -> None:
+        """Files ripgrep couldn't search ("rg: ./path: Permission denied (os error 13)"): reported, not dropped."""
+        nonlocal skipped_count
+        assert proc.stderr
+        async for raw in proc.stderr:
+            line = raw.decode(errors="replace").strip()
+            line = line[4:] if line.startswith("rg: ") else line
+            path, _, reason = line.partition(": ")
+            if not reason:
+                continue  # not a per-file message
+            skipped_count += 1
+            if len(skipped) < 20:
+                path = path[2:] if path.startswith("./") else path
+                skipped.append({"path": (root + "/" + path) if root else path, "reason": reason[:200]})
 
     async def read() -> None:
         nonlocal count, truncated
@@ -95,7 +114,8 @@ async def search(body: SearchBody, _: SessionDep, request: Request) -> dict:
             path = d["path"].get("text")
             text = d["lines"].get("text")
             if path is None or text is None:
-                continue  # not valid UTF-8
+                not_text += 1  # a match in a file that isn't UTF-8 text: counted and reported, not shown
+                continue
             path = path[2:] if path.startswith("./") else path
             text = text.rstrip("\n")
             raw_bytes = text.encode()
@@ -111,6 +131,7 @@ async def search(body: SearchBody, _: SessionDep, request: Request) -> dict:
                 truncated = True
                 return
 
+    errs = asyncio.ensure_future(read_errors())
     try:
         await asyncio.wait_for(read(), TIMEOUT_SEC)
     except TimeoutError:
@@ -119,9 +140,14 @@ async def search(body: SearchBody, _: SessionDep, request: Request) -> dict:
         if proc.returncode is None:
             proc.kill()
         await proc.wait()
-    if proc.returncode == 2 and not files and not truncated:
+        try:
+            await asyncio.wait_for(errs, 2)
+        except TimeoutError:
+            errs.cancel()  # the pipe closed with the process; only a stuck reader ends up here
+    if proc.returncode == 2 and not files and not truncated and not skipped_count:
         raise HTTPException(400, "Search failed (check the regular expression)")
-    return {"files": list(files.values()), "match_count": count, "truncated": truncated}
+    return {"files": list(files.values()), "match_count": count, "truncated": truncated,
+            "skipped": skipped, "skipped_count": skipped_count, "not_text_matches": not_text}
 
 
 @router.get("/fs/files")
@@ -133,6 +159,7 @@ async def all_files(root: str, _: SessionDep, request: Request) -> dict:
         raise HTTPException(400, str(exc))
     proc = await _rg(svc, root, ["--files", "."])
     out: list[str] = []
+    timed_out = False
     try:
         async def read() -> None:
             assert proc.stdout
@@ -143,10 +170,10 @@ async def all_files(root: str, _: SessionDep, request: Request) -> dict:
                     return
         await asyncio.wait_for(read(), TIMEOUT_SEC)
     except TimeoutError:
-        pass
+        timed_out = True  # the list is incomplete: said so below
     finally:
         if proc.returncode is None:
             proc.kill()
         await proc.wait()
     out.sort()
-    return {"root": root, "files": out, "truncated": len(out) >= MAX_FILES_LISTED}
+    return {"root": root, "files": out, "truncated": timed_out or len(out) >= MAX_FILES_LISTED}

@@ -94,6 +94,8 @@ It splits into three pieces:
 ## ✨ Highlights at a Glance
 
 * **🔍 Agent-Change Timeline**: Every burst of agent edits becomes a change set, shown file by file with only the changed lines and 3 lines of context, expandable to more context or the whole file. Restore one file or undo the whole set. Filter by "last 15 minutes", "last hour" or "today", or open any file's own history. Claude's edits are labelled exactly through an edit hook.
+* **🧷 Automatic Checkpoint Commits**: Forgetting to commit is the classic vibecoding mistake. A few minutes after changes settle, the work in progress is committed to a side branch, `checkpoints/<branch>`, with a message Claude Haiku writes from the diff. Your branch, staged changes and files are never touched, nothing is pushed, and `.env` files, keys and dependency folders are left out. It starts over on top of each real commit. On by default, switchable per project.
+* **📜 Starter Agent Rules**: A project without agent rules gets an `AGENTS.md` the first time you open it (read by agy directly, and by Claude Code through a one-line `CLAUDE.md`). It covers security first, a 300-line file limit, committing after every session, no silent errors (every failure shown in full to whoever runs the code, secrets masked, and only a plain message plus reference ID for site visitors), proving changes work, and not guessing or wrecking things. Edit it, or delete it: it never comes back.
 * **💾 Auto-Save That Stays Out of the Way**: Each changed file saves itself 3 minutes after its last change (a new change restarts the timer), plus a big orange **Save All** button (`Ctrl+Alt+S`). If an agent edits a file you have unsaved changes in, you choose: Keep mine, Take theirs or Compare.
 * **🖥️ Terminals That Keep Running**: Claude, agy and shell terminals live in the builder and keep working while the app is closed. Reopening replays the scrollback.
 * **▶️ Per-App Window Streaming**: **Run App** (`F5`) starts your app in the builder, and its windows, dialogs and popups open on your laptop as normal windows you can move and resize (Wayland apps: Qt, GTK/Tauri, SDL, raylib, GLFW). No full-desktop streaming.
@@ -221,6 +223,16 @@ With `VB_TRUST_CF=1` the lockouts use Cloudflare's `CF-Connecting-IP` header. On
 * **The 10 GB cap**: when history passes `history_cap_bytes`, the files that have gone longest without a change lose their history first, so what you're actively working on keeps its full past.
 * **Review** ([desktop/src/components/ReviewView.svelte](desktop/src/components/ReviewView.svelte)): hunks with 3 lines of context, "More context" and "Whole file", restore a file, or undo a whole set.
 
+### Checkpoint Commits ([server/src/vbide/checkpoints.py](server/src/vbide/checkpoints.py), [builder/agent/vbagent/checkpoints.py](builder/agent/vbagent/checkpoints.py))
+* **When**: every recorded change (an agent's change set, or a save from the editor) marks its project. Once the project has been quiet for `VB_CHECKPOINT_DELAY_SEC` (180 s), the builder makes a checkpoint of each git repo that changed. **Checkpoint now** in the status bar doesn't wait.
+* **What**: the working tree as `git add -A` would take it (`.gitignore` applies), built in a temporary index, so the branch, the staging area and the files stay exactly as they are. Left out, with a notice in the app: files that look like secrets (`.env`, keys, `credentials*.json`...), files containing something that looks like a token or private key, dependency and build folders, and new files over 5 MB.
+* **Where**: `checkpoints/<branch>`. While the branch doesn't move, each checkpoint follows the last; after a real commit the next one starts on top of it. Merges, rebases and detached HEADs are left alone. Nothing is ever pushed. To get a file back: `git checkout checkpoints/main -- path`.
+* **Messages**: `claude -p --model haiku` with no tools, run outside the repo, writes a title and a short changelog from the diff (secrets already removed). If it fails, a plain summary of the changed files is used.
+* **Safety**: git runs in the builder with hooks and fsmonitor disabled, so nothing in a repo's config gets to run. The switch and the last result per project are kept in `data/checkpoints.json`.
+
+### Starter Agent Rules ([server/src/vbide/agent_rules.py](server/src/vbide/agent_rules.py))
+The first time a project is opened, if it has none of `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.cursorrules` and the like, it gets [templates/AGENTS.md](server/src/vbide/templates/AGENTS.md) plus a `CLAUDE.md` that imports it. Each project gets them only once (`data/agent_rules.json`), so a deleted file stays deleted.
+
 ---
 
 ## 4. Terminals & AI Agents
@@ -310,6 +322,8 @@ VibeBuilder-IDE/
 │   │   ├── files.py             # read, write, rename, delete through the jail
 │   │   ├── search.py            # ripgrep folder search
 │   │   ├── agent_link.py        # the only client of the builder agent (terminals, git)
+│   │   ├── checkpoints.py       # automatic checkpoint commits (when, per-project switch)
+│   │   ├── agent_rules.py       # starter AGENTS.md for projects without rules (templates/)
 │   │   ├── tunnels.py           # port, reverse and window tunnels for app testing
 │   │   ├── live.py              # the live-update WebSocket hub
 │   │   └── cli.py               # vbide pair / devices / revoke / auth-qr / new-totp
@@ -318,7 +332,7 @@ VibeBuilder-IDE/
 ├── builder/                     # vb-builder image
 │   ├── Containerfile            # Arch + toolchains + Android SDK + Nix
 │   ├── rootfs/                  # entrypoint, pacman hook, fish greeting, fastfetch
-│   └── agent/                   # vbagent: PTY terminals, git, tunnel endpoints; vb-edit-hook
+│   └── agent/                   # vbagent: PTY terminals, git, checkpoint commits, tunnels; vb-edit-hook
 ├── client-core/                 # shared TypeScript: API client, sockets, diff, fuzzy, auto-save
 ├── desktop/                     # laptop app (Tauri 2 + Svelte 5)
 │   ├── src/                     # components, commands & menus, editor, terminals, testing
@@ -333,8 +347,8 @@ VibeBuilder-IDE/
 ```bash
 cd server && uv venv .venv && uv pip install -p .venv -e '.[test]' -e ../builder/agent playwright
 .venv/bin/playwright install chromium
-.venv/bin/pytest -q                  # server + builder agent: auth, jail escapes, history, restore, search, terminals, tunnels
-.venv/bin/pytest -q ../desktop/e2e   # the real UI in Chromium: first run, pairing, sign-in, editing, review, menus
+.venv/bin/pytest -q                  # server + builder agent: auth, jail escapes, history, restore, search, terminals, tunnels, checkpoints, agent rules
+.venv/bin/pytest -q ../desktop/e2e   # the real UI in Chromium: first run, pairing, sign-in, editing, review, menus, checkpoints
 ```
 The same suite runs on every push ([.github/workflows/ci.yml](.github/workflows/ci.yml)).
 
@@ -346,7 +360,7 @@ The same suite runs on every push ([.github/workflows/ci.yml](.github/workflows/
 * VibeBuilder IDE has **no analytics, no telemetry and no accounts**. Your files, history and terminals stay on your desktop; the only outside connection is the tunnel or proxy you set up. (The AI agents you run talk to their own providers, as they would anywhere.)
 
 ### 🤖 2. Know What You're Giving the Agents
-* Agents run with full rights **inside the builder**: passwordless `sudo`, and no permission prompts. The container keeps them off your real system, but they can change or delete anything in your workspace. The change history lets you undo what they did, within its 10 GB. Keep secrets out of the workspace.
+* Agents run with full rights **inside the builder**: passwordless `sudo`, and no permission prompts. The container keeps them off your real system, but they can change or delete anything in your workspace. The change history and the checkpoint commits let you undo what they did. Keep secrets out of the workspace.
 
 ### ⚖️ 3. Software License & Commercial Inquiries
 * **Non-Commercial Use**: VibeBuilder IDE is licensed for personal, hobbyist, educational and other non-commercial use under the **[PolyForm Noncommercial License 1.0.0](LICENSE)**.

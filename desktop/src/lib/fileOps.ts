@@ -1,5 +1,5 @@
 // File operations shared by the explorer (buttons, right-click, F2/Del) and the File menu.
-import { basename, dirname, join } from "@core/index";
+import { ApiError, basename, dirname, join } from "@core/index";
 import { editors } from "./editors.svelte";
 import { session } from "./session.svelte";
 import { tree } from "./tree.svelte";
@@ -23,7 +23,11 @@ export async function newItem(kind: "file" | "dir", dir = targetDir()) {
   try {
     const parts = name.split("/").filter(Boolean); // make missing parent folders for "a/b/c.txt"
     for (let i = 1; i < parts.length; i++) {
-      try { await session.api.create(join(dir, ...parts.slice(0, i)), "dir"); } catch { /* exists */ }
+      try {
+        await session.api.create(join(dir, ...parts.slice(0, i)), "dir");
+      } catch (e) {
+        if (!(e instanceof ApiError && e.status === 409)) throw e;  // only "already exists" is fine here
+      }
     }
     await session.api.create(path, kind);
     await tree.load(dirname(path));

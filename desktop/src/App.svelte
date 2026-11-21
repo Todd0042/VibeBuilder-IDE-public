@@ -14,7 +14,7 @@
     void session.init();
     // The lock button and closing the app save unsaved files first, then sign out.
     session.beforeLock(() => editors.saveAll());
-    void onWindowClose(() => session.lock());
+    void onWindowClose(() => session.lock("", { closing: true }));
   });
 
   $effect(() => {

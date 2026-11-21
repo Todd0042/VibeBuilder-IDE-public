@@ -48,6 +48,8 @@ class Settings:
     history_max_file_bytes: int = field(default_factory=lambda: _int("VB_HISTORY_MAX_FILE_BYTES", 4 * 1024 * 1024))
     changeset_quiet_sec: float = field(default_factory=lambda: float(os.environ.get("VB_CHANGESET_QUIET_SEC", "5")))
     file_settle_sec: float = field(default_factory=lambda: float(os.environ.get("VB_FILE_SETTLE_SEC", "2")))
+    # Checkpoint commits: how long a project must be quiet first (like auto-save).
+    checkpoint_delay_sec: float = field(default_factory=lambda: float(os.environ.get("VB_CHECKPOINT_DELAY_SEC", "180")))
 
     @property
     def secrets_dir(self) -> Path:
@@ -64,6 +66,15 @@ class Settings:
     @property
     def history_dir(self) -> Path:
         return self.data_dir / "history"
+
+    @property
+    def checkpoints_file(self) -> Path:
+        return self.data_dir / "checkpoints.json"
+
+    @property
+    def agent_rules_file(self) -> Path:
+        """Projects that were given the starter AGENTS.md once (never again, even if it's deleted)."""
+        return self.data_dir / "agent_rules.json"
 
     @property
     def pair_dir(self) -> Path:

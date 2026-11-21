@@ -7,6 +7,7 @@
   GET    /activity              which terminals were busy, and hook-reported edits, in a time window
   POST   /hook                  {kind, path}: from the Claude Code edit hook in this container
   GET    /git/status?project=   branch + changed files of a project
+  POST   /git/checkpoint        {folders, who}: checkpoint commit of the repos holding these folders
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
+from .checkpoints import checkpoint_folders
 from .terminals import WORKSPACE, Terminals
 from .tunnels import Tunnels, listening_ports
 
@@ -188,15 +190,24 @@ def git_status(project: str) -> dict:
     if not folder.is_dir() or (folder != ws and ws not in folder.parents):
         return {"repo": False}
     try:
-        top = subprocess.run(["git", "-C", str(folder), "rev-parse", "--show-toplevel"], capture_output=True,
-                             timeout=10, check=True, text=True).stdout.strip()
-        root = Path(top).resolve()
+        r = subprocess.run(["git", "-C", str(folder), "rev-parse", "--show-toplevel"], capture_output=True,
+                           timeout=10, text=True)
+        if r.returncode != 0:
+            if "not a git repository" in r.stderr:
+                return {"repo": False}
+            return {"repo": False, "error": r.stderr.strip()[:500] or f"git rev-parse exited {r.returncode}"}
+        root = Path(r.stdout.strip()).resolve()
         if root != ws and ws not in root.parents:
             return {"repo": False}  # the repo is above the workspace
-        out = subprocess.run(["git", "-C", str(root), "status", "--porcelain=v2", "--branch", "-z",
-                              "--untracked-files=all"], capture_output=True, timeout=15, check=True).stdout
-    except (subprocess.SubprocessError, OSError):
-        return {"repo": False}
+        s = subprocess.run(["git", "-C", str(root), "status", "--porcelain=v2", "--branch", "-z",
+                            "--untracked-files=all"], capture_output=True, timeout=15)
+        if s.returncode != 0:
+            return {"repo": False, "error": s.stderr.decode(errors="replace").strip()[:500] or "git status failed"}
+        out = s.stdout
+    except subprocess.TimeoutExpired:
+        return {"repo": False, "error": "git didn't answer within 15 seconds (a very large repo, or a hung git process?)"}
+    except OSError as exc:
+        return {"repo": False, "error": f"couldn't run git: {exc}"}
     branch, ahead, behind, files = "", 0, 0, []
     items = out.split(b"\0")
     i = 0
@@ -221,3 +232,15 @@ def git_status(project: str) -> dict:
             break
     return {"repo": True, "root": str(root.relative_to(ws)) if root != ws else "", "branch": branch, "ahead": ahead,
             "behind": behind, "files": files}
+
+
+class Checkpoint(BaseModel):
+    folders: list[str] = Field(max_length=200)
+    who: list[str] = Field(default=[], max_length=10)
+
+
+@app.post("/git/checkpoint")
+def git_checkpoint(body: Checkpoint) -> dict:
+    """Runs in a worker thread: a checkpoint can take a while (Claude writes its message)."""
+    folders = [f for f in body.folders if isinstance(f, str) and len(f) < 4096 and "\0" not in f]
+    return {"results": checkpoint_folders(folders, [w for w in body.who if w in ("claude", "agy", "you", "shell")])}

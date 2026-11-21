@@ -26,7 +26,9 @@ export async function deviceName(): Promise<string> {
 }
 
 /** Sign out before the window closes (best effort; the server's idle timeout covers a crash). */
-export async function onWindowClose(handler: () => Promise<void>): Promise<void> {
+/** Runs `handler` when the window is asked to close; the window closes when it returns true, and stays open when it
+ *  returns false (the user chose to keep it, e.g. because unsaved files didn't save). */
+export async function onWindowClose(handler: () => Promise<boolean>): Promise<void> {
   if (!inTauri) {
     window.addEventListener("beforeunload", () => { void handler(); });
     return;
@@ -35,7 +37,9 @@ export async function onWindowClose(handler: () => Promise<void>): Promise<void>
   const win = getCurrentWindow();
   await win.onCloseRequested(async (e) => {
     e.preventDefault();
-    try { await Promise.race([handler(), new Promise((r) => setTimeout(r, 1500))]); } finally { await win.destroy(); }
+    let close = true;
+    try { close = await handler(); } catch { close = true; /* the handler shows its own errors; never trap the user */ }
+    if (close) await win.destroy();
   });
 }
 

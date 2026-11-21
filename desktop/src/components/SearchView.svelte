@@ -121,6 +121,14 @@
   {#if result && !busy}
     <div class="summary pad faint">
       {result.match_count} result{result.match_count === 1 ? "" : "s"} in {result.files.length} file{result.files.length === 1 ? "" : "s"}{result.truncated ? " (stopped early: narrow the search)" : ""}
+      {#if result.skipped_count}
+        <div class="skipped" title={(result.skipped ?? []).map((s) => `${s.path}: ${s.reason}`).join("\n") + (result.skipped_count > (result.skipped?.length ?? 0) ? "\n…" : "")}>
+          ⚠ {result.skipped_count} file{result.skipped_count === 1 ? "" : "s"} couldn't be searched{result.skipped?.length ? ` (e.g. ${result.skipped[0].path}: ${result.skipped[0].reason})` : ""}
+        </div>
+      {/if}
+      {#if result.not_text_matches}
+        <div class="skipped">{result.not_text_matches} more match{result.not_text_matches === 1 ? "" : "es"} in files that aren't plain UTF-8 text (not shown)</div>
+      {/if}
     </div>
     {#each result.files as f (f.path)}
       <button class="file" onclick={() => (collapsed[f.path] = !collapsed[f.path])}>
@@ -164,4 +172,5 @@
   .ln { color: var(--faint); min-width: 28px; text-align: right; flex: none; }
   .txt { overflow: hidden; text-overflow: ellipsis; color: #b8bfcc; }
   mark { background: #e8b04a55; color: #fff; border-radius: 2px; outline: 1px solid #e8b04a88; }
+  .skipped { color: var(--warn); margin-top: 3px; }
 </style>

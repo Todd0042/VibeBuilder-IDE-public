@@ -1,6 +1,6 @@
 // The typed API client. No UI here: the laptop and phone apps both build on it.
 import type {
-  ChangesetDetail, ChangesetSummary, DeviceInfo, DirListing, FileContent, FileDiff, FileVersion, GitStatus,
+  ChangesetDetail, ChangesetSummary, CheckpointInfo, CheckpointRun, DeviceInfo, Problem, DirListing, FileContent, FileDiff, FileVersion, GitStatus,
   LoginResult, PairResult, RangeDetail, SaveResult, SearchOptions, SearchResult, TerminalInfo, TerminalKind,
 } from "./types";
 
@@ -129,4 +129,20 @@ export class Api {
   ports() { return this.req<{ ports: { port: number; process: string }[] }>("GET", "/api/v1/ports", undefined, { background: true }); }
   closeTerminal(id: string) { return this.req("DELETE", `/api/v1/terminals/${encodeURIComponent(id)}`); }
   gitStatus(project: string) { return this.req<GitStatus>("GET", "/api/v1/git/status" + this.q({ project }), undefined, { background: true }); }
+
+  // ---- checkpoints and starter agent rules -------------------------------------------------------
+  checkpoints(project: string) {
+    return this.req<CheckpointInfo>("GET", "/api/v1/checkpoints" + this.q({ project }), undefined, { background: true });
+  }
+  setCheckpoints(project: string, enabled: boolean) { return this.req<CheckpointInfo>("PUT", "/api/v1/checkpoints", { project, enabled }); }
+  checkpointNow(project: string) { return this.req<CheckpointRun>("POST", "/api/v1/checkpoints/now", { project }); }
+  /** Adds AGENTS.md (+ CLAUDE.md) to a project without agent rules, once ever. */
+  ensureAgentRules(project: string) {
+    return this.req<{ created: string[]; failed: { path: string; reason: string }[] }>(
+      "POST", "/api/v1/agent-rules", { project }, { background: true });
+  }
+
+  // ---- problems the server ran into ----------------------------------------------------------------
+  problems() { return this.req<{ problems: Problem[] }>("GET", "/api/v1/problems", undefined, { background: true }); }
+  dismissProblem(key: string) { return this.req("DELETE", `/api/v1/problems/${encodeURIComponent(key)}`); }
 }

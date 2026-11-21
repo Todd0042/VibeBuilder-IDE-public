@@ -3,6 +3,7 @@
 // session it hasn't heard from in 10 minutes (an app that crashed, lost power, or a laptop asleep).
 import { Api, ApiError, LiveSocket, normalizeServer, type LiveEvent } from "@core/index";
 import { tokenDelete, tokenGet, tokenSet, tunnelSession } from "./native";
+import { ui } from "./ui.svelte";
 
 // Built in from VB_PUBLIC_URL in vibebuilder.env (bin/vb-app); empty = the sign-in screen asks for it.
 export const DEFAULT_SERVER: string = import.meta.env.VITE_DEFAULT_SERVER ?? "";
@@ -22,10 +23,11 @@ class SessionState {
   private listeners = new Set<(e: LiveEvent) => void>();
   private keepalive: ReturnType<typeof setInterval> | null = null;
   private signedOutHandlers = new Set<() => void>();
-  private beforeLockHandlers = new Set<() => Promise<void>>();
+  private beforeLockHandlers = new Set<() => Promise<boolean | void>>();
 
-  /** Run before a lock or app close signs out (the editors save unsaved files here). */
-  beforeLock(h: () => Promise<void>) {
+  /** Run before a lock or app close signs out (the editors save unsaved files here). Return false when something
+   *  couldn't be done (e.g. a file didn't save): the user is then asked before locking or closing. */
+  beforeLock(h: () => Promise<boolean | void>) {
     this.beforeLockHandlers.add(h);
     return () => this.beforeLockHandlers.delete(h);
   }
@@ -89,15 +91,32 @@ class SessionState {
     this.phase = "pair";
   }
 
-  /** The lock button and closing the app end up here. */
-  async lock(reason = "") {
+  /** The lock button and closing the app end up here. Returns false when the user chose to stay (a file didn't
+   *  save), in which case nothing happened. */
+  async lock(reason = "", opts: { closing?: boolean } = {}): Promise<boolean> {
     if (this.phase === "ready") {
-      for (const h of this.beforeLockHandlers) await h().catch(() => {});
+      let ok = true;
+      for (const h of this.beforeLockHandlers) {
+        try {
+          const timedOut = new Promise<false>((r) => setTimeout(() => r(false), 10_000));
+          if ((await Promise.race([h(), timedOut])) === false) ok = false;
+        } catch (e) {
+          ok = false;
+          ui.error(e, "Couldn't finish before signing out");
+        }
+      }
+      if (!ok) {
+        const go = opts.closing
+          ? await ui.confirm("Some files didn't save", "If you close now, those unsaved edits are lost. The reason is in the error above. Keep the app open to fix it and save again.", "Close anyway", true)
+          : await ui.confirm("Some files didn't save", "They stay unsaved in their tabs while locked, and you can save them after signing back in.", "Lock anyway");
+        if (!go) return false;
+      }
     }
     this.stopBackground();
-    await this.api.logout();
+    await Promise.race([this.api.logout(), new Promise((r) => setTimeout(r, 3000))]);  // signing out anyway
     this.lockReason = reason;
     if (this.phase === "ready") this.phase = "code";
+    return true;
   }
 
   private signedOut(reason: string) {

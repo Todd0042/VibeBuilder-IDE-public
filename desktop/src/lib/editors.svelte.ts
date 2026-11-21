@@ -153,12 +153,14 @@ class Editors {
     }
   }
 
-  async saveAll() {
+  /** Saves every unsaved tab. True when all of them saved (each failure was already shown with its reason). */
+  async saveAll(): Promise<boolean> {
     this.saving = true;
     try {
       const results = await Promise.all(this.dirtyTabs.map((t) => this.save(t)));
       const failed = results.filter((ok) => !ok).length;
       if (results.length && !failed) ui.toast(`Saved ${results.length} file${results.length > 1 ? "s" : ""}`, "ok", undefined, 1800);
+      return failed === 0;
     } finally {
       this.saving = false;
     }

@@ -44,6 +44,9 @@
 
   <section>
     <h4>Listening in the builder</h4>
+    {#if testing.portsError}
+      <div class="stale">⚠ Out of date: the builder isn't answering ({testing.portsError}). This is the last list it sent.</div>
+    {/if}
     {#each testing.builderPorts as p (p.port)}
       <div class="row">
         <span class="mono port">{p.port}</span>
@@ -92,4 +95,5 @@
   .hint { margin: 0; font-size: 12px; }
   .note { margin: 0; padding: 8px 10px; border-radius: 6px; background: #2a2619; color: #ffe2b0; }
   code { font-family: var(--mono); font-size: 11.5px; background: #0e1015; padding: 1px 5px; border-radius: 4px; color: var(--text); }
+  .stale { color: var(--warn); font-size: 12px; margin: 4px 0; }
 </style>

@@ -36,7 +36,8 @@ def _wait_http(url: str, proc: subprocess.Popen) -> None:
 
 
 @contextmanager
-def running_stack(base: Path, server_port: int | None = None):
+def running_stack(base: Path, server_port: int | None = None, prepare=None):
+    """`prepare(data_dir)`, if given, runs after the folders exist and before the server starts."""
     ws, data, link = base / "workspace", base / "data", base / "link"
     for d in (ws / "proj" / "src", data / "secrets", link):
         d.mkdir(parents=True)
@@ -46,14 +47,28 @@ def running_stack(base: Path, server_port: int | None = None):
     (base / "secret.txt").write_text("outside the workspace\n")
     os.symlink(base / "secret.txt", ws / "proj" / "leak.txt")
     os.symlink(data, ws / "proj" / "datalink")
+    # Stand-in for `claude -p` (checkpoint messages): logs what it was given; fails while claude-fail exists.
+    fake = base / "fake-claude"
+    fake.write_text(f"""#!{sys.executable}
+import sys, pathlib
+base = pathlib.Path({str(base)!r})
+(base / "claude-calls.log").open("a").write(sys.stdin.read() + "\\n=====\\n")
+if (base / "claude-fail").exists():
+    sys.exit(1)
+print("Add the greeting feature\\n\\n- Add feature.js\\n- Wire it into app.js")
+""")
+    fake.chmod(0o755)
     secret = pyotp.random_base32()
     (data / "secrets" / "totp_secret").write_text(secret)
     (link / "agent_token").write_text("agent-token-for-tests")
+    if prepare:
+        prepare(data)
 
     agent_port, server_port = _port(), server_port or _port()
     env = {**os.environ, "VB_WORKSPACE": str(ws), "VB_DATA": str(data), "VB_AGENT_TOKEN_FILE": str(link / "agent_token"),
            "VB_AGENT_URL": f"ws://127.0.0.1:{agent_port}", "VB_CHANGESET_QUIET_SEC": "1.5", "VB_FILE_SETTLE_SEC": "0.5",
-           "VB_TRUST_CF": "1", "HOME": str(base / "home")}
+           "VB_TRUST_CF": "1", "HOME": str(base / "home"),
+           "VB_CHECKPOINT_DELAY_SEC": "2", "VB_CHECKPOINT_CLAUDE": str(fake)}
     (base / "home" / ".config" / "vibebuilder").mkdir(parents=True)
     # bash, not fish: fish asks the terminal questions that only a real terminal (xterm.js) answers
     (base / "home" / ".config" / "vibebuilder" / "terminals.json").write_text(json.dumps({"shell": "bash"}))
@@ -74,6 +89,19 @@ def running_stack(base: Path, server_port: int | None = None):
             p.wait(5)
 
 
+
+
+def signed_in(stack, ip: str) -> tuple[httpx.Client, str]:
+    """A newly paired device, signed in (waits for a fresh 30-second code if needed)."""
+    c = httpx.Client(base_url=stack["url"], timeout=15, headers={"cf-connecting-ip": ip})
+    r = c.post("/api/v1/auth/pair", json={"code": pair_code(stack["data"]), "device_name": "Test device"})
+    assert r.status_code == 200, r.text
+    used = stack.setdefault("used_steps", set())
+    r = c.post("/api/v1/auth/login", json={"device_token": r.json()["device_token"], "code": fresh_code(stack["totp"], used)})
+    assert r.status_code == 200, r.text
+    session = r.json()["session"]
+    c.headers["authorization"] = f"Bearer {session}"
+    return c, session
 
 
 def pair_code(data: Path) -> str:

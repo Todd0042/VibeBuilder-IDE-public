@@ -13,6 +13,8 @@ if TYPE_CHECKING:
     from .auth.guard import Guard
     from .auth.sessions import SessionStore
     from .auth.totp import Totp
+    from .checkpoints import Checkpointer
+    from .problems import Problems
     from .config import Settings
     from .history.recorder import Recorder
     from .history.store import HistoryStore
@@ -32,6 +34,8 @@ class Services:
     history: "HistoryStore"
     recorder: "Recorder"
     agent: "AgentLink"
+    checkpoints: "Checkpointer"
+    problems: "Problems"
 
 
 def services(request: "Request") -> Services:

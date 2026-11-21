@@ -11,6 +11,7 @@ Run: cd server && .venv/bin/pytest -q ../desktop/e2e   (Chromium from Playwright
 from __future__ import annotations
 
 import os
+import json
 import re
 import socket
 import subprocess
@@ -103,6 +104,10 @@ def test_working_session(app):
         code_input(page).fill(fresh_code(app["totp"], used))
         expect(page.locator(".tree")).to_be_visible(timeout=10_000)
         expect(page.locator(".row.root")).to_contain_text("PROJ")
+        # First time this project (no agent rules of its own) is opened: starter AGENTS.md + CLAUDE.md, and a note.
+        expect(page.locator(".toast", has_text="Added starter agent rules")).to_be_visible(timeout=10_000)
+        wait_for(lambda: (ws / "proj" / "AGENTS.md").exists() and (ws / "proj" / "CLAUDE.md").exists(), "the starter rules")
+        expect(page.locator(".tree")).to_contain_text("AGENTS.md")
 
         # Open a file from the explorer, edit, Ctrl+S.
         page.locator(".row", has_text="src").first.click()
@@ -226,7 +231,46 @@ def test_working_session(app):
         time.sleep(0.3)
         assert page.locator(".area .tab").count() == tabs_before
 
-        # Lock, sign back in: tabs survive.
+        # Checkpoints: the project becomes a git repo; an agent's change gets committed to checkpoints/main
+        # by itself, and the status bar says so. The switch in the Devices view turns it off.
+        repo = ws / "proj"
+        for args in (["init", "-q", "-b", "main"], ["add", "-A"],
+                     ["-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qm", "Start"]):
+            subprocess.run(["git", "-C", str(repo), *args], check=True)
+        (repo / "src" / "feature.py").write_text("def greet(n):\n    return f'hi {n}'\n")
+        checkpoint = page.locator(".status .checkpoint")
+        expect(checkpoint).to_contain_text("Checkpoint just now", timeout=20_000)
+        expect(checkpoint).to_have_attribute("title", re.compile("Add the greeting feature"))
+        made = subprocess.run(["git", "-C", str(repo), "show", "--stat", "checkpoints/main"], capture_output=True, text=True).stdout
+        assert "src/feature.py" in made and "AGENTS.md" not in made  # only what changed since the commit
+        page.locator(".act[title='Devices and settings']").click()
+        toggle = page.get_by_label("Automatic checkpoint commits for proj")
+        expect(toggle).to_be_checked()
+        toggle.uncheck()
+        expect(checkpoint).to_contain_text("Checkpoints off")
+        assert json.loads((app["data"] / "checkpoints.json").read_text())["off"] == ["proj"]
+        toggle.check()
+        expect(checkpoint).to_contain_text("Checkpoint just now")
+        page.locator(".act[title^='Explorer']").click()
+
+        # Locking with a file that can't be saved (the server refuses): never silently. You're asked, and
+        # "Cancel" keeps you working with the edit still there.
+        page.locator(".area .tab", has_text="README.md").click()
+        page.locator(".pane:not(.hidden) .cm-content").click()
+        page.keyboard.press("Control+End")
+        page.keyboard.type("\nunsaved line\n")
+        fail_saves = lambda route: route.fulfill(status=500, content_type="application/json", body='{"detail": "disk full (test)"}')
+        page.route(lambda u: "/api/v1/fs/file" in u, lambda route: fail_saves(route) if route.request.method == "PUT" else route.continue_())
+        page.locator("button[title^='Lock']").click()
+        dialog = page.locator(".dialog")
+        expect(dialog).to_contain_text("Some files didn't save")
+        expect(page.locator(".toast.error", has_text="disk full (test)")).to_be_visible()
+        dialog.get_by_role("button", name="Cancel").click()
+        expect(page.get_by_role("heading", name="Locked")).to_have_count(0)
+        expect(page.locator(".area .tab.active .x.dirty")).to_be_visible()
+        page.unroute_all()
+
+        # Lock, sign back in: tabs survive (and the edit above is saved on the way).
         page.locator("button[title^='Lock']").click()
         expect(page.get_by_role("heading", name="Locked")).to_be_visible()
         shot(page, "07-locked")

@@ -1,0 +1,48 @@
+#!/bin/bash
+# Builder start-up (runs as coder): first-run setup in the persistent home, then the agent.
+set -u
+. /etc/profile.d/vibebuilder.sh
+# GPU driver symlinks + linker cache (what NVIDIA's CDI hook would do; see bin/vb-gpu-sync on the host).
+if [ -f /run/vb-link/gpu-links.sh ]; then sudo sh /run/vb-link/gpu-links.sh >/dev/null 2>&1 || true; fi
+
+# A freshly created builder (after a rebuild or a GPU driver change) gets back everything you had
+# installed: /workspace/.vibebuilder/packages.txt is kept by a pacman hook; downloads are cached.
+if [ -s /workspace/.vibebuilder/packages.txt ]; then
+  want=$(comm -23 <(sort -u /workspace/.vibebuilder/packages.txt) <(pacman -Qq | sort -u))
+  if [ -n "$want" ]; then
+    found=$(for p in $want; do pacman -Si "$p" >/dev/null 2>&1 && echo "$p"; done)
+    if [ -n "$found" ]; then
+      echo "[vibebuilder] reinstalling your packages: $(echo $found | tr '\n' ' ')"
+      sudo pacman -Sy --noconfirm --needed $found >/dev/null 2>&1 || echo "[vibebuilder] some packages didn't reinstall"
+    fi
+  fi
+fi
+
+mkdir -p "$HOME/.local/bin" "$HOME/.config/vibebuilder" "$NPM_CONFIG_PREFIX" /workspace/.vibebuilder
+
+# Claude Code: the native install lives in the home volume and keeps itself up to date.
+if ! command -v claude >/dev/null 2>&1; then
+  echo "[vibebuilder] installing Claude Code..."
+  curl -fsSL https://claude.ai/install.sh | bash >/dev/null 2>&1 || echo "[vibebuilder] Claude Code install failed; run 'curl -fsSL https://claude.ai/install.sh | bash' in a shell"
+fi
+
+# Claude's edit hook: tells the IDE exactly which files Claude changed (labels the Changes view).
+python3 - <<'PY'
+import json, pathlib
+p = pathlib.Path.home() / ".claude" / "settings.json"
+p.parent.mkdir(parents=True, exist_ok=True)
+try:
+    s = json.loads(p.read_text())
+except (FileNotFoundError, ValueError):
+    s = {}
+hooks = s.setdefault("hooks", {}).setdefault("PostToolUse", [])
+cmd = "/usr/local/bin/vb-edit-hook claude"
+if not any(h.get("command") == cmd for m in hooks for h in m.get("hooks", [])):
+    hooks.append({"matcher": "Edit|Write|MultiEdit|NotebookEdit", "hooks": [{"type": "command", "command": cmd}]})
+    p.write_text(json.dumps(s, indent=2) + "\n")
+PY
+
+# git: the workspace is yours; don't trip over "dubious ownership" for root-created repos.
+git config --global --get-all safe.directory | grep -qx '\*' || git config --global --add safe.directory '*'
+
+exec /opt/vbagent/venv/bin/uvicorn vbagent.main:app --host 0.0.0.0 --port 7070 --no-access-log --log-level warning

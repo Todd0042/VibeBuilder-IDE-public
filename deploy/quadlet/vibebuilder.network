@@ -1,0 +1,3 @@
+# Private network between the IDE server and the builder (the builder agent is reachable only here).
+[Network]
+NetworkName=vibebuilder

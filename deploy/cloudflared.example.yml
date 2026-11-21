@@ -1,0 +1,18 @@
+# Cloudflare Tunnel for VibeBuilder IDE: an example ~/.cloudflared/config.yml.
+#
+#   cloudflared tunnel login
+#   cloudflared tunnel create vibebuilder            # prints the tunnel id, writes <id>.json
+#   cloudflared tunnel route dns vibebuilder ide.example.com
+#   cloudflared tunnel run vibebuilder               # or install it as a service
+#
+# The server listens on 127.0.0.1 only, so the tunnel is the one way in, which is what makes
+# VB_TRUST_CF=1 (client addresses from CF-Connecting-IP) safe. Use the same hostname as VB_PUBLIC_URL.
+# The <id>.json credentials file is a secret: keep it out of every repo.
+
+tunnel: <your-tunnel-id>
+credentials-file: /home/<you>/.cloudflared/<your-tunnel-id>.json
+
+ingress:
+  - hostname: ide.example.com
+    service: http://127.0.0.1:8765         # VB_SERVER_PORT
+  - service: http_status:404

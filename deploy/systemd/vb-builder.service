@@ -1,0 +1,17 @@
+# The builder (agents and terminals). A persistent container: see bin/vb-builder-create.
+[Unit]
+Description=VibeBuilder builder (agents and terminals)
+Wants=vibebuilder-network.service
+After=vibebuilder-network.service
+
+[Service]
+Type=simple
+ExecStartPre=@REPO@/bin/vb-builder-create
+ExecStart=/usr/bin/podman start --attach vb-builder
+ExecStop=/usr/bin/podman stop --time 15 vb-builder
+Restart=always
+RestartSec=3
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

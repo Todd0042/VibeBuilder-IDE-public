@@ -1,0 +1,15 @@
+I use Arch btw. So does the AI. We're insufferable together.
+Claude writes the code, agy reviews it, you take the credit. Teamwork.
+It works on my container.
+--dangerously-skip-permissions: the "hold my beer" of flags.
+CachyOS: Arch, but it went to the gym.
+The Android app is coming. It's in the same place as your unfinished side projects.
+sudo pacman -S confidence
+There are no bugs, only undocumented features written by a language model.
+Root inside, nobody outside. Very zen.
+Your GPU is idling. Claude finds this unacceptable.
+git commit -m "fixed it (for real this time)"
+This shell has seen things. Mostly node_modules.
+Agents at work. Please keep your hands inside the diff at all times.
+Ctrl+C is not a personality, but it is a strategy.
+Somewhere, a Pixel is waiting for an APK.

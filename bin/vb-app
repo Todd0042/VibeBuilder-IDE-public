@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# Run the laptop app straight from the repo (no AppImage): `git pull && bin/vb-app`.
+#
+# This is Tauri's dev mode: the native shell compiles once (first run takes a few minutes, later runs
+# are quick), and UI changes reload live while it runs. The device pairing and keychain token are the
+# same as the AppImage's, so you stay paired either way.
+#
+#   bin/vb-app            run it
+#   bin/vb-app build      build the release AppImage (desktop/src-tauri/target/release/bundle/appimage/)
+#   bin/vb-app --check    only check that the tools are installed
+#
+# From vibebuilder.env (optional on a laptop): VB_PUBLIC_URL becomes the app's default server (empty =
+# the sign-in screen asks), and VB_APP_IDENTIFIER, if set, replaces the app id in tauri.conf.json.
+set -euo pipefail
+REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+APP="$REPO/desktop"
+# shellcheck source=lib/vbconfig.sh
+. "$REPO/bin/lib/vbconfig.sh"
+export VITE_DEFAULT_SERVER="$VB_PUBLIC_URL"
+tauri_config=()
+if [[ -n "$VB_APP_IDENTIFIER" ]]; then
+  [[ "$VB_APP_IDENTIFIER" =~ ^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$ ]] || { echo "VB_APP_IDENTIFIER must look like com.example.app"; exit 1; }
+  tauri_config=(--config "{\"identifier\":\"$VB_APP_IDENTIFIER\"}")
+fi
+
+missing=()
+command -v cargo >/dev/null || missing+=("rust")
+command -v npm >/dev/null || missing+=("nodejs npm")
+pkg-config --exists webkit2gtk-4.1 2>/dev/null || missing+=("webkit2gtk-4.1")
+pkg-config --exists libsoup-3.0 2>/dev/null || missing+=("libsoup3")
+command -v cc >/dev/null || missing+=("base-devel")
+if ((${#missing[@]})); then
+  echo "Missing: ${missing[*]}"
+  echo "Install with:  sudo pacman -S --needed ${missing[*]}"
+  exit 1
+fi
+# Optional, for app testing: waypipe (app windows) and adb (a phone plugged into this laptop).
+optional=()
+command -v waypipe >/dev/null || optional+=("waypipe")
+command -v adb >/dev/null || optional+=("android-tools")
+if ((${#optional[@]})); then
+  echo "For app testing (Run App windows, the phone), also install:  sudo pacman -S --needed ${optional[*]}"
+fi
+[[ "${1:-}" == "--check" ]] && { echo "All set."; exit 0; }
+
+# Desktop integration. Wayland windows can't carry their own icon: KDE/GNOME look up the window's
+# app id (the binary name, "vibebuilder-ide") in the installed .desktop files and the icon theme.
+# This also gives a launcher entry ("VibeBuilder IDE") that runs this script.
+install_desktop_entry() {
+  local data="${XDG_DATA_HOME:-$HOME/.local/share}" icons="$APP/src-tauri/icons" id="vibebuilder-ide"
+  local -A sizes=([32x32]=32x32.png [64x64]=64x64.png [128x128]=128x128.png [256x256]=128x128@2x.png [512x512]=icon.png)
+  local s changed=0
+  for s in "${!sizes[@]}"; do
+    local dst="$data/icons/hicolor/$s/apps/$id.png"
+    if ! cmp -s "$icons/${sizes[$s]}" "$dst"; then
+      install -Dm644 "$icons/${sizes[$s]}" "$dst"; changed=1
+    fi
+  done
+  local entry="$data/applications/$id.desktop" body
+  body="[Desktop Entry]
+Type=Application
+Name=VibeBuilder IDE
+Comment=Remote IDE for the VibeBuilder desktop server
+Exec=$REPO/bin/vb-app
+Icon=$id
+Terminal=false
+Categories=Development;IDE;
+StartupWMClass=$id"
+  if [[ "$(cat "$entry" 2>/dev/null)" != "$body" ]]; then
+    install -d "$(dirname "$entry")"; printf '%s\n' "$body" > "$entry"; changed=1
+  fi
+  if ((changed)); then
+    touch "$data/icons/hicolor" 2>/dev/null || true
+    command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 >/dev/null 2>&1 || true
+    command -v update-desktop-database >/dev/null && update-desktop-database -q "$data/applications" || true
+    echo "[vb-app] installed the launcher and icon (restart the app if the taskbar still shows a generic icon)"
+  fi
+}
+install_desktop_entry
+
+cd "$APP"
+# (Re)install JS packages when package-lock.json changed since the last install (e.g. after a pull).
+if [[ ! -d node_modules || package-lock.json -nt node_modules/.package-lock.json ]]; then
+  echo "[vb-app] installing JS packages..."
+  npm ci --no-audit --no-fund
+fi
+if [[ "${1:-}" == build ]]; then
+  npx tauri build --bundles appimage "${tauri_config[@]}"
+  ls -1 "$APP"/src-tauri/target/release/bundle/appimage/*.AppImage
+  exit 0
+fi
+exec npx tauri dev "${tauri_config[@]}"

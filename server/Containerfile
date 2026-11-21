@@ -1,0 +1,19 @@
+# VibeBuilder IDE server: sign-in, files, search, change history, terminal proxy.
+# Holds the secrets (authenticator, device tokens) and the history; the builder can't see any of it.
+# Runs as an unprivileged user with every capability dropped and a read-only root filesystem.
+FROM docker.io/library/archlinux:latest
+
+RUN pacman -Syu --noconfirm --needed python ripgrep && rm -rf /var/cache/pacman/pkg/* \
+ && useradd -u 1000 -U -M -d /nonexistent -s /usr/bin/nologin vbide \
+ && mkdir -p /workspace /data /run/vb-link && chown vbide:vbide /data
+
+COPY pyproject.toml /opt/vbide/src/
+COPY src /opt/vbide/src/src
+RUN python -m venv /opt/vbide/venv && /opt/vbide/venv/bin/pip install --no-cache-dir /opt/vbide/src \
+ && ln -s /opt/vbide/venv/bin/vbide /usr/local/bin/vbide
+
+USER vbide
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 VB_WORKSPACE=/workspace VB_DATA=/data
+EXPOSE 8765
+CMD ["/opt/vbide/venv/bin/uvicorn", "vbide.app:app", "--host", "0.0.0.0", "--port", "8765", "--no-access-log", \
+     "--ws-max-size", "4194304", "--timeout-graceful-shutdown", "5"]

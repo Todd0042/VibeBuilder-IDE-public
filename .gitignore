@@ -1,0 +1,28 @@
+# secrets and machine state never go in the repo
+.env
+.env.*
+!.env.example
+*.secret
+*.key
+*.pem
+*.p12
+credentials*.json
+server-data/
+link/
+# this machine's settings (copy vibebuilder.env.example)
+vibebuilder.env
+
+# builds and caches
+node_modules/
+desktop/dist/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+server/.venv/
+**/__pycache__/
+**/*.egg-info/
+*.AppImage
+.pytest_cache/
+.ruff_cache/
+
+# written by `vibebuilder build` from the workspace's package list
+builder/packages.extra.txt

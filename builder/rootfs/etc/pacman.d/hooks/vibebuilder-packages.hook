@@ -1,0 +1,10 @@
+[Trigger]
+Operation = Install
+Operation = Remove
+Type = Package
+Target = *
+
+[Action]
+Description = Saving the package list for the next VibeBuilder rebuild...
+When = PostTransaction
+Exec = /usr/local/bin/vb-save-packages

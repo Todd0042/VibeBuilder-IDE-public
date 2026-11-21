@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# vibebuilder: run the VibeBuilder-IDE containers on this desktop.
+#
+#   vibebuilder install          one-time setup (folders, link token, systemd units); settings: vibebuilder.env
+#   vibebuilder build [what]     build images: builder | server | all (default all)
+#   vibebuilder rebuild          fresh builder image (keeps your pacman installs) + restart it
+#   vibebuilder start|stop|restart|status
+#   vibebuilder logs [server|builder]
+#   vibebuilder pair             pair a laptop/phone (QR + 30-second code)
+#   vibebuilder devices          list paired devices;  vibebuilder revoke <id>
+#   vibebuilder auth-qr          show the authenticator QR for 30 s
+#   vibebuilder new-totp         make a new authenticator secret (then auth-qr to scan it)
+#   vibebuilder history          change-history disk use
+#   vibebuilder shell [root]     a shell in the builder (as coder, or root)
+#   vibebuilder gpu-sync         after an NVIDIA driver update: refresh the builder's GPU files (replaces the container)
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+# shellcheck source=lib/vbconfig.sh
+. "$REPO/bin/lib/vbconfig.sh"
+STORE="$VB_STATE_DIR"
+WORKSPACE="$VB_WORKSPACE_DIR"
+QUADLET_DIR="$HOME/.config/containers/systemd"
+STORAGE_CONF="$HOME/.config/containers/storage.conf"
+
+say() { printf '\033[1;36m[vibebuilder]\033[0m %s\n' "$*"; }
+die() { printf '\033[1;31m[vibebuilder]\033[0m %s\n' "$*" >&2; exit 1; }
+need_podman() { command -v podman >/dev/null || die "Podman isn't installed. Run: sudo pacman -S podman"; }
+need_config() {
+  [[ "$VB_PUBLIC_URL" =~ ^https?://[^/[:space:]]+/?$ ]] || die "Set VB_PUBLIC_URL in $VB_ENV_FILE (copy vibebuilder.env.example), e.g. https://ide.example.com"
+  [[ "$VB_TRUST_CF" == 0 || "$VB_TRUST_CF" == 1 ]] || die "VB_TRUST_CF must be 0 or 1"
+  [[ "$VB_SERVER_PORT" =~ ^[0-9]+$ ]] || die "VB_SERVER_PORT must be a number"
+  case "$VB_WORKSPACE_DIR/" in "$VB_STATE_DIR/"*) die "VB_WORKSPACE_DIR can't be inside VB_STATE_DIR (agents would see the secrets)";; esac
+  case "$VB_STATE_DIR/" in "$VB_WORKSPACE_DIR/"*) die "VB_STATE_DIR can't be inside VB_WORKSPACE_DIR (agents would see the secrets)";; esac
+}
+
+# Write the server's quadlet from its template. Returns 0 if it changed.
+render_units() {
+  local t c
+  t="$(<"$REPO/deploy/quadlet/vb-server.container.in")"
+  for k in VB_PUBLIC_URL VB_WORKSPACE_DIR VB_STATE_DIR VB_SERVER_PORT VB_TRUST_CF VB_TOTP_ISSUER; do
+    t="${t//@$k@/${!k}}"
+  done
+  mkdir -p "$QUADLET_DIR"
+  c="$QUADLET_DIR/vb-server.container"
+  [[ -L "$c" ]] && rm -f "$c"  # older installs linked the repo file
+  if [[ "$(cat "$c" 2>/dev/null)" != "$t" ]]; then
+    printf '%s\n' "$t" > "$c"
+    return 0
+  fi
+  return 1
+}
+
+cmd_install() {
+  need_podman
+  need_config
+  # Optional: Podman's images and containers on another disk (the builder image is large).
+  if [[ -n "$VB_CONTAINER_STORAGE" && ! -f "$STORAGE_CONF" ]]; then
+    mkdir -p "$(dirname "$STORAGE_CONF")" "$VB_CONTAINER_STORAGE"
+    printf '[storage]\ndriver = "overlay"\ngraphroot = "%s"\n' "$VB_CONTAINER_STORAGE" > "$STORAGE_CONF"
+    say "Container storage: $VB_CONTAINER_STORAGE"
+  fi
+  mkdir -p "$STORE"/{builder-home,nix,link,server-data/secrets} "$WORKSPACE"
+  chmod 700 "$STORE/server-data" "$STORE/server-data/secrets"
+
+  # The server <-> builder link token (the builder agent accepts only the IDE server).
+  if [[ ! -s "$STORE/link/agent_token" ]]; then
+    (umask 077; head -c 32 /dev/urandom | base64 | tr -d '/+=\n' > "$STORE/link/agent_token")
+  fi
+  # Only you: both containers map their user to yours (keep-id), so they can still read it.
+  chmod 600 "$STORE/link/agent_token"
+
+  local secret_file="$STORE/server-data/secrets/totp_secret"
+  [[ -s "$secret_file" ]] || say "No authenticator secret yet: after 'vibebuilder start', run 'vibebuilder new-totp'."
+
+  # Builder git identity (its own config, not a link to yours).
+  if [[ ! -f "$STORE/builder-home/.gitconfig" ]]; then
+    printf '[user]\n\tname = %s\n\temail = %s\n[init]\n\tdefaultBranch = main\n[safe]\n\tdirectory = *\n' \
+      "$(git config --global user.name || echo coder)" "$(git config --global user.email || echo coder@localhost)" \
+      > "$STORE/builder-home/.gitconfig"
+  fi
+  [[ -e "$STORE/builder-home/.local/bin" ]] || mkdir -p "$STORE/builder-home/.local/bin"
+  [[ -f "$HOME/.local/bin/agy" ]] || say "Note: ~/.local/bin/agy not found; the agy tab won't work until it exists."
+
+  "$REPO/bin/vb-gpu-sync"
+  mkdir -p "$QUADLET_DIR" "$HOME/.config/systemd/user"
+  ln -sf "$REPO/deploy/quadlet/vibebuilder.network" "$QUADLET_DIR/vibebuilder.network"
+  render_units || true
+  rm -f "$QUADLET_DIR/vb-builder.container"  # the builder used to be a quadlet (throwaway container)
+  sed "s#@REPO@#$REPO#g" "$REPO/deploy/systemd/vb-builder.service" > "$HOME/.config/systemd/user/vb-builder.service"
+  systemctl --user enable vb-builder.service >/dev/null 2>&1 || true
+  systemctl --user daemon-reload
+  say "Installed. Next: vibebuilder build && vibebuilder start"
+}
+
+cmd_build() {
+  need_podman
+  local what="${1:-all}"
+  if [[ "$what" == all || "$what" == builder ]]; then
+    # Packages installed since the last build come back (see the pacman hook in the image).
+    if [[ -f "$WORKSPACE/.vibebuilder/packages.txt" ]]; then
+      cp "$WORKSPACE/.vibebuilder/packages.txt" "$REPO/builder/packages.extra.txt"
+    else
+      : > "$REPO/builder/packages.extra.txt"
+    fi
+    say "Building the builder image (the first build downloads a lot: allow 20-40 min)..."
+    podman build --format docker --pull=newer -t localhost/vibebuilder-builder:latest "$REPO/builder"
+  fi
+  if [[ "$what" == all || "$what" == server ]]; then
+    say "Building the server image..."
+    podman build --format docker --pull=newer -t localhost/vibebuilder-server:latest "$REPO/server"
+  fi
+  podman image prune -f >/dev/null || true
+}
+
+svc() { systemctl --user "$1" vb-server.service vb-builder.service; }
+
+cmd_status() {
+  systemctl --user --no-pager status vb-builder.service vb-server.service 2>/dev/null | grep -E '●|Active:' || true
+  podman ps --filter name=vb- --format '{{.Names}}\t{{.Status}}' 2>/dev/null || true
+}
+
+# A new builder container from the current image. Your files, home, and pacman installs (reinstalled
+# from packages.txt on start) carry over; running terminals end.
+recreate_builder() {
+  say "Replacing the builder container: open terminals end (claude -c resumes a conversation)."
+  systemctl --user stop vb-builder.service
+  podman rm -f vb-builder >/dev/null 2>&1 || true
+  systemctl --user start vb-builder.service
+}
+
+server_exec() { podman exec -it vb-server vbide "$@"; }
+
+case "${1:-help}" in
+  install) cmd_install ;;
+  build) shift; cmd_build "${1:-all}" ;;
+  rebuild)
+    cmd_build builder
+    recreate_builder ;;
+  gpu-sync) "$REPO/bin/vb-gpu-sync"; recreate_builder ;;
+  start|restart)
+    need_config
+    # Picks up vibebuilder.env changes (the builder reads them itself when it's created).
+    if render_units; then systemctl --user daemon-reload; say "Server settings updated from $VB_ENV_FILE"; fi
+    systemctl --user start vibebuilder-network.service 2>/dev/null || true
+    svc "$1"; cmd_status ;;
+  stop) svc stop ;;
+  status) cmd_status ;;
+  logs) journalctl --user -u "vb-${2:-server}.service" -n 200 -f ;;
+  pair) server_exec pair ;;
+  devices) server_exec devices ;;
+  revoke) [[ -n "${2:-}" ]] || die "Usage: vibebuilder revoke <device id> (see: vibebuilder devices)"; server_exec revoke "$2" ;;
+  auth-qr) server_exec auth-qr ;;
+  new-totp) shift; server_exec new-totp "$@" ;;
+  history) server_exec history-usage ;;
+  shell) if [[ "${2:-}" == root ]]; then podman exec -it -u 0 vb-builder bash -l; else podman exec -it vb-builder bash -lc 'exec fish -l'; fi ;;
+  help|-h|--help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) die "Unknown command: $1 (try: vibebuilder help)" ;;
+esac

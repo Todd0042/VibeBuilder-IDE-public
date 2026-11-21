@@ -1,0 +1,34 @@
+[project]
+name = "vbide"
+version = "0.1.0"
+description = "VibeBuilder-IDE server: auth, files, search, change history and a terminal proxy for the builder container."
+requires-python = ">=3.14"  # compression.zstd (history store)
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "pyotp>=2.9",
+  "segno>=1.6",
+  "inotify-simple>=1.3.5",
+  "websockets>=13",
+  "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-asyncio>=0.24"]
+
+[project.scripts]
+vbide = "vbide.cli:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120

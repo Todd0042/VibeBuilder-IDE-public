@@ -1,0 +1,108 @@
+# VibeBuilder builder: where the agents (claude, agy) and your shells work. Arch Linux.
+#
+# Agents are `coder` with passwordless sudo, so they can `sudo pacman -S` whatever they need. The box
+# runs under rootless Podman with --userns=keep-id: root in here is an unprivileged uid on the host,
+# and coder is you (uid 1000), so files in /workspace stay yours.
+#
+# Anything installed later with pacman is written to /workspace/.vibebuilder/packages.txt by a pacman
+# hook; `vibebuilder rebuild` reinstalls that list, so a rebuild never loses your packages.
+
+FROM docker.io/library/archlinux:base-devel
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# ---- pacman: multilib on (for 32-bit packages later), parallel downloads, keep docs/man pages -------
+RUN sed -i 's/^#ParallelDownloads.*/ParallelDownloads = 10/' /etc/pacman.conf \
+ && sed -i '/^\[multilib\]/,/^Include/ s/^#//' /etc/pacman.conf \
+ && if ! grep -q '^\[multilib\]' /etc/pacman.conf; then printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >> /etc/pacman.conf; fi \
+ && sed -i 's/^NoExtract/#NoExtract/' /etc/pacman.conf \
+ && pacman-key --init && pacman-key --populate archlinux \
+ && pacman -Syu --noconfirm && rm -rf /var/cache/pacman/pkg/*
+
+# ---- everyday tools ----------------------------------------------------------------------------------
+RUN pacman -S --noconfirm --needed \
+      git git-lfs github-cli openssh sudo which file less man-db man-pages \
+      zsh fish bash-completion tmux neovim nano htop btop tree rsync curl wget unzip zip 7zip xz zstd \
+      ripgrep fd fzf jq yq bat eza sqlite lsof strace ltrace gdb lldb valgrind perf inotify-tools \
+      shellcheck shfmt protobuf grpc postgresql-libs mariadb-libs \
+ && rm -rf /var/cache/pacman/pkg/*
+
+# ---- languages: Python, JS/TS, Rust, Go, C/C++ (+ Windows cross via mingw), Java/Kotlin, Lua, Zig, Nix --
+RUN pacman -S --noconfirm --needed \
+      python python-pip python-pipx python-virtualenv python-setuptools python-wheel uv ruff pyright tk \
+      nodejs npm pnpm yarn deno bun typescript-language-server \
+      rustup rust-analyzer sccache cargo-nextest \
+      go gopls delve \
+      gcc clang llvm lld cmake ninja meson make pkgconf ccache autoconf automake libtool bear \
+      mingw-w64-gcc mingw-w64-binutils mingw-w64-crt mingw-w64-headers mingw-w64-winpthreads \
+      jdk21-openjdk jdk17-openjdk kotlin gradle maven \
+      lua luarocks zig nix \
+ && archlinux-java set java-21-openjdk \
+ && rm -rf /var/cache/pacman/pkg/*
+
+# ---- graphics, GUI and media libraries (Qt/QML, SDL, raylib, GLFW, Vulkan, Tauri/WebKit, ffmpeg) -----
+RUN pacman -S --noconfirm --needed \
+      qt6-base qt6-declarative qt6-tools qt6-svg qt6-wayland qt6-shadertools \
+      sdl2-compat sdl3 raylib glfw mesa vulkan-icd-loader vulkan-headers vulkan-tools shaderc glslang spirv-tools libglvnd \
+      openssl zlib libffi gtk3 gtk4 webkit2gtk-4.1 libayatana-appindicator librsvg \
+      ffmpeg imagemagick libsndfile portaudio alsa-lib \
+      xorg-server-xvfb xorg-xauth chromium nss \
+ && rm -rf /var/cache/pacman/pkg/*
+
+# ---- Android SDK (matches the desktop: platforms 34-36, build-tools 34-36, NDK 27.2 + 28.2) -----------
+ENV ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk
+RUN mkdir -p /opt/android-sdk/cmdline-tools \
+ && curl -fsSL -o /tmp/clt.zip https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip \
+ && unzip -q /tmp/clt.zip -d /opt/android-sdk/cmdline-tools && mv /opt/android-sdk/cmdline-tools/cmdline-tools /opt/android-sdk/cmdline-tools/latest \
+ && rm /tmp/clt.zip \
+ && (yes || true) | /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null \
+ && /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager --install \
+      "platform-tools" "platforms;android-34" "platforms;android-35" "platforms;android-36" \
+      "build-tools;34.0.0" "build-tools;35.0.0" "build-tools;36.0.0" \
+      "ndk;27.2.12479018" "ndk;28.2.13676358" "cmake;3.22.1" >/dev/null \
+ && chown -R 1000:1000 /opt/android-sdk
+
+# ---- Rust toolchains (shared, in /opt so every user sees them) ----------------------------------------
+ENV RUSTUP_HOME=/opt/rustup
+RUN rustup default stable \
+ && rustup component add clippy rustfmt rust-src \
+ && rustup target add x86_64-pc-windows-gnu wasm32-unknown-unknown aarch64-linux-android armv7-linux-androideabi x86_64-linux-android \
+ && chmod -R a+rwX /opt/rustup
+
+# ---- app testing: waypipe (app windows on the laptop) ------------------------------------------------
+# (a later layer of its own, so adding tools here doesn't rebuild everything above)
+RUN pacman -Sy --noconfirm --needed waypipe && rm -rf /var/cache/pacman/pkg/*
+
+# ---- the coder user (you), with passwordless sudo -------------------------------------------------------
+RUN (getent group 1000 >/dev/null && groupmod -n coder "$(getent group 1000 | cut -d: -f1)" || groupadd -g 1000 coder) \
+ && useradd -m -u 1000 -g 1000 -s /usr/bin/fish coder \
+ && echo 'coder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/coder && chmod 440 /etc/sudoers.d/coder \
+ && mkdir -p /workspace /opt/vbagent && chown coder:coder /workspace
+
+# Nix, single-user (no daemon in a container): /nix owned by coder, sandbox off.
+RUN mkdir -p /nix /etc/nix && chown -R coder:coder /nix \
+ && printf 'build-users-group =\nsandbox = false\nexperimental-features = nix-command flakes\n' > /etc/nix/nix.conf
+
+# ---- package list hook + shell defaults -----------------------------------------------------------------
+COPY rootfs/ /
+RUN chmod 755 /usr/local/bin/vb-* && chmod 644 /etc/pacman.d/hooks/*.hook /etc/profile.d/vibebuilder.sh
+
+# ---- the builder agent (terminals + git for the IDE server) -----------------------------------------------
+COPY agent/ /opt/vbagent/src/
+RUN python -m venv /opt/vbagent/venv \
+ && /opt/vbagent/venv/bin/pip install --no-cache-dir /opt/vbagent/src \
+ && install -m 755 /opt/vbagent/src/vb-edit-hook /usr/local/bin/vb-edit-hook
+
+# ---- packages you (or an agent) installed before the last rebuild ----------------------------------------
+COPY packages.extra.txt /opt/vbagent/packages.extra.txt
+RUN if [ -s /opt/vbagent/packages.extra.txt ]; then \
+      want=$(comm -23 <(sort -u /opt/vbagent/packages.extra.txt) <(pacman -Qq | sort -u)); \
+      found=$(for p in $want; do pacman -Si "$p" >/dev/null 2>&1 && echo "$p"; done); \
+      if [ -n "$found" ]; then pacman -S --noconfirm --needed $found; fi; \
+      rm -rf /var/cache/pacman/pkg/*; \
+    fi
+
+USER coder
+WORKDIR /workspace
+ENV VB_WORKSPACE=/workspace PATH=/home/coder/.local/bin:/home/coder/.npm-global/bin:/home/coder/.cargo/bin:/home/coder/go/bin:/opt/android-sdk/platform-tools:/opt/android-sdk/cmdline-tools/latest/bin:/usr/local/bin:/usr/bin
+EXPOSE 7070
+ENTRYPOINT ["/usr/local/bin/vb-entrypoint"]

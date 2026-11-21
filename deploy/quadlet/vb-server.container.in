@@ -1,0 +1,33 @@
+# The IDE server: published on 127.0.0.1 only (your tunnel or reverse proxy forwards VB_PUBLIC_URL here).
+# Template: `vibebuilder install` fills in the @...@ values from vibebuilder.env.
+# Read-only root, every capability dropped, no new privileges. The workspace is mounted nodev, nosuid
+# and noexec: agents control those files, and nothing in them is ever run here.
+[Unit]
+Description=VibeBuilder IDE server
+Wants=vb-builder.service
+After=vb-builder.service
+
+[Container]
+ContainerName=vb-server
+Image=localhost/vibebuilder-server:latest
+Network=vibebuilder.network
+PublishPort=127.0.0.1:@VB_SERVER_PORT@:8765
+UserNS=keep-id:uid=1000,gid=1000
+ReadOnly=true
+DropCapability=ALL
+NoNewPrivileges=true
+Tmpfs=/tmp:rw,nosuid,nodev,noexec,size=256m
+PodmanArgs=--memory=4g --pids-limit=512
+Volume=@VB_WORKSPACE_DIR@:/workspace:rw,nodev,nosuid,noexec
+Volume=@VB_STATE_DIR@/server-data:/data
+Volume=@VB_STATE_DIR@/link:/run/vb-link:ro
+Environment=VB_PUBLIC_URL=@VB_PUBLIC_URL@
+Environment=VB_TRUST_CF=@VB_TRUST_CF@
+Environment=VB_TOTP_ISSUER=@VB_TOTP_ISSUER@
+Environment=VB_AGENT_URL=ws://vb-builder:7070
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

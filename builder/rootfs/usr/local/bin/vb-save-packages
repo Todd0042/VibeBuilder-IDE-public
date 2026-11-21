@@ -1,0 +1,6 @@
+#!/bin/bash
+# After every pacman install/remove: write the explicitly installed packages where a rebuild finds them.
+mkdir -p /workspace/.vibebuilder
+pacman -Qqe > /workspace/.vibebuilder/packages.txt.tmp && mv /workspace/.vibebuilder/packages.txt.tmp /workspace/.vibebuilder/packages.txt
+chown -R 1000:1000 /workspace/.vibebuilder 2>/dev/null
+exit 0

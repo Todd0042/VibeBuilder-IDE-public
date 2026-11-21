@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Create the builder container if it doesn't exist yet (systemd runs this before starting it).
+#
+# The builder is a *persistent* container, not a throwaway one: whatever you or an agent install with
+# `sudo pacman` stays across restarts and reboots. Only `vibebuilder rebuild` replaces it (from a fresh
+# image that reinstalls /workspace/.vibebuilder/packages.txt). Same isolation as before: rootless
+# Podman, keep-id (coder = you, root inside = an unprivileged host uid), default capabilities only.
+set -euo pipefail
+NAME=vb-builder
+IMAGE=localhost/vibebuilder-builder:latest
+REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+# shellcheck source=lib/vbconfig.sh
+. "$REPO/bin/lib/vbconfig.sh"
+STORE="$VB_STATE_DIR"
+
+if podman container exists "$NAME"; then
+  # A container made from an older image keeps running until you rebuild; that's the point.
+  exit 0
+fi
+
+"$REPO/bin/vb-gpu-sync" >/dev/null
+mkdir -p "$STORE/pacman-cache"
+# for the shell greeting: the builder can't see the host's os-release itself
+(. /etc/os-release; echo "${PRETTY_NAME:-Linux}, kernel $(uname -r)") > "$STORE/link/host-os"
+gpu=()
+[[ -f "$STORE/gpu.args" ]] && mapfile -t gpu < "$STORE/gpu.args"
+agy=()
+[[ -f "$HOME/.local/bin/agy" ]] && agy=(--volume "$HOME/.local/bin/agy:/home/coder/.local/bin/agy:ro")
+
+podman create --name "$NAME" --hostname vibebuilder --network vibebuilder \
+  --userns=keep-id:uid=1000,gid=1000 \
+  --memory="$VB_BUILDER_MEMORY" --cpus="$VB_BUILDER_CPUS" --pids-limit=8192 --shm-size=2g \
+  --volume "$VB_WORKSPACE_DIR:/workspace" \
+  --volume "$STORE/builder-home:/home/coder" \
+  --volume "$STORE/nix:/nix" \
+  --volume "$STORE/pacman-cache:/var/cache/pacman/pkg" \
+  --volume "$STORE/link:/run/vb-link:ro" \
+  "${agy[@]}" "${gpu[@]}" \
+  "$IMAGE" >/dev/null
+echo "created $NAME"

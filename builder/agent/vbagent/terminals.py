@@ -134,7 +134,8 @@ class Terminals:
                             time.sleep(0.04)
                     except Exception:
                         xvfb_proc = None
-            argv = (["waypipe", "--socket", waypipe_socket, "--compress", "zstd", "server", "--", *app]
+            xwls = ["--xwls"] if shutil.which("xwayland-satellite") else []
+            argv = (["waypipe", "--socket", waypipe_socket, "--compress", "zstd", *xwls, "server", "--", *app]
                     if waypipe_socket and not preview else app)
         elif kind == "shell":
             argv = ["bash", "-lc", f"exec {shell} -l"]

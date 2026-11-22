@@ -298,7 +298,7 @@ The first time a project is opened, if it has none of `AGENTS.md`, `CLAUDE.md`, 
 
 All three ride the signed-in session (`/api/v1/tunnel`, `/api/v1/reverse`, `/api/v1/preview`) and stop when you lock or close the app. The client only connects to targets it registered itself.
 
-* **Run App (`F5` / Desktop)**: runs a command in the builder under `waypipe server`; the laptop runs the `waypipe` client, so each window, dialog and popup arrives as its own native window, scaled and resizable. Output goes to a ▶ terminal tab, and closing the tab stops the app. Wayland apps only (no X11). No audio yet.
+* **Run App (`F5` / Desktop)**: runs a command in the builder under `waypipe server`; the laptop runs the `waypipe` client, so each window, dialog and popup arrives as its own native window, scaled and resizable. Output goes to a ▶ terminal tab, and closing the tab stops the app. Supports both native Wayland apps and X11/Tkinter apps (bridged via xwayland-satellite). No audio yet.
 * **Run App (Mobile Screen Preview)**: on Android, selecting **Run with preview** launches the app in a headless virtual display (`Xvfb`) and streams the display live into an interactive **Screen Preview** tab in the terminal area. You can verify that the app opened, inspect UI layout, tap elements (translated via `xdotool`), and type into input fields, with a seamless toggle to **Console** for viewing runtime logs.
 * **Ports**: lists what's listening in the builder and forwards a port to `localhost` on the laptop (it picks another local port if that one is taken).
 * **Phone**: the builder's `adb` uses the laptop's adb server through a reverse tunnel, so a phone plugged into the laptop is visible to Gradle and `adb` in the builder.

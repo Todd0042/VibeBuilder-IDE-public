@@ -70,7 +70,7 @@ RUN rustup default stable \
 
 # ---- app testing: waypipe (app windows on the laptop) + xdotool (mobile app screen preview) ---------
 # (a later layer of its own, so adding tools here doesn't rebuild everything above)
-RUN pacman -Sy --noconfirm --needed waypipe xdotool && rm -rf /var/cache/pacman/pkg/*
+RUN pacman -Sy --noconfirm --needed waypipe xwayland-satellite xdotool && rm -rf /var/cache/pacman/pkg/*
 
 # ---- the coder user (you), with passwordless sudo -------------------------------------------------------
 RUN (getent group 1000 >/dev/null && groupmod -n coder "$(getent group 1000 | cut -d: -f1)" || groupadd -g 1000 coder) \

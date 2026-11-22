@@ -38,7 +38,7 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ripgrep git
+          sudo apt-get install -y ripgrep git xvfb xdotool imagemagick
 
       - name: Install Python Dependencies
         working-directory: server

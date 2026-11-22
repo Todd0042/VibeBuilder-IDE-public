@@ -61,6 +61,7 @@ export async function setZoom(factor: number): Promise<void> {
 export const canTunnel = inTauri;
 export const canAdb = inTauri;
 export const canGui = inTauri;
+export const canPreview = false;
 export const canQrScan = false;
 const needApp = () => { throw new Error("Only in the desktop app"); };
 

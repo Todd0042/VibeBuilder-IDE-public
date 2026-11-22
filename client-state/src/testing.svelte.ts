@@ -3,7 +3,7 @@ import { session } from "./session.svelte";
 import { terminals } from "./terminals.svelte";
 import { ui } from "./ui.svelte";
 import {
-  adbConnect, adbDisconnect, adbStatus, canAdb, canGui, canTunnel, guiStart, guiStop,
+  adbConnect, adbDisconnect, adbStatus, canAdb, canGui, canPreview, canTunnel, guiStart, guiStop,
   portForward, portForwards, portUnforward,
 } from "@platform";
 
@@ -21,6 +21,7 @@ class Testing {
   readonly available = canTunnel;
   readonly adbAvailable = canAdb;
   readonly guiAvailable = canGui;
+  readonly previewAvailable = canPreview;
   private runs = new Map<string, string>(); // terminal id -> run id (GUI runs)
 
   constructor() {
@@ -86,35 +87,44 @@ class Testing {
       title: `Run an app in ${ui.project || "the workspace"}`,
       message: this.guiAvailable
         ? "Its windows (and dialogs) open on this laptop as their own windows. Its output goes to a ▶ terminal tab; close the tab to stop it."
+        : this.previewAvailable
+        ? "Runs the command with an in-app interactive screen preview tab to verify the UI. Close the tab to stop it."
         : "Runs the command in a ▶ terminal tab (close the tab to stop it). Forward any web port in the Ports tab to preview it here.",
       input: localStorage.getItem(key) ?? "",
       placeholder: "e.g. npm run dev · ./build/game · python app.py",
       buttons: [
         { label: "Cancel", value: "cancel" },
-        { label: "Terminal only", value: "plain", primary: !this.guiAvailable },
         ...(this.guiAvailable ? [{ label: "Run with windows", value: "gui", primary: true }] : []),
+        ...(!this.guiAvailable && this.previewAvailable ? [{ label: "Run with preview", value: "preview", primary: true }] : []),
+        { label: "Terminal only", value: "plain", primary: !this.guiAvailable && !this.previewAvailable },
       ],
     });
     const cmd = r.input.trim();
     if (r.button === "cancel" || !cmd) return;
     localStorage.setItem(key, cmd);
-    await this.run(cmd, r.button === "gui");
+    await this.run(cmd, r.button === "gui" ? "gui" : r.button === "preview" ? "preview" : "plain");
   }
 
-  async run(cmd: string, gui: boolean) {
+  async run(cmd: string, mode: "gui" | "preview" | "plain" | boolean) {
     const runId = Math.random().toString(16).slice(2, 12);
     let socket = "";
+    const isGui = mode === "gui" || mode === true;
+    const isPreview = mode === "preview";
     try {
-      if (gui) socket = await guiStart(runId);
-      const t = await session.api.newTerminal("run", ui.project, 120, 30, { cmd, waypipeSocket: socket });
-      if (gui) this.runs.set(t.id, runId);
+      if (isGui) socket = await guiStart(runId);
+      const t = await session.api.newTerminal("run", ui.project, 120, 30, {
+        cmd,
+        waypipeSocket: socket,
+        preview: isPreview,
+      });
+      if (isGui) this.runs.set(t.id, runId);
       terminals.list = [...terminals.list, t];
       terminals.activeId = t.id;
       ui.panelOpen = true;
       ui.panelTab = "terminals";
       ui.mobileView = "terminal";
     } catch (e) {
-      if (gui) void guiStop(runId);
+      if (isGui) void guiStop(runId);
       ui.error(e, "Couldn't start the app");
     }
   }

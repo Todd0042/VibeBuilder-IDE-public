@@ -12,6 +12,7 @@ import fcntl
 import json
 import os
 import secrets
+import shutil
 import signal
 import struct
 import subprocess
@@ -37,6 +38,33 @@ TITLES = {"claude": "claude", "agy": "agy", "shell": "shell", "run": "run"}
 RUNTIME_DIR = "/tmp/xdg-coder"  # XDG_RUNTIME_DIR for apps (waypipe makes its Wayland socket here)
 
 
+def _find_free_display() -> int:
+    for d in range(95, 150):
+        if not os.path.exists(f"/tmp/.X11-unix/X{d}"):
+            return d
+    return 99
+
+
+def _cleanup_xvfb(t: Terminal) -> None:
+    if t.xvfb_proc:
+        try:
+            t.xvfb_proc.terminate()
+            t.xvfb_proc.wait(timeout=1)
+        except Exception:
+            try:
+                t.xvfb_proc.kill()
+            except Exception:
+                pass
+        t.xvfb_proc = None
+    if t.display is not None:
+        sock = f"/tmp/.X11-unix/X{t.display}"
+        if os.path.exists(sock):
+            try:
+                os.remove(sock)
+            except OSError:
+                pass
+
+
 def load_commands() -> dict[str, str]:
     try:
         user = json.loads(CONFIG.read_text())
@@ -60,6 +88,9 @@ class Terminal:
     exit_code: int | None = None
     out_log: deque = field(default_factory=lambda: deque(maxlen=3600))  # (second, bytes) for attribution
     title: str = ""
+    preview: bool = False
+    display: int | None = None
+    xvfb_proc: subprocess.Popen | None = None
 
     @property
     def alive(self) -> bool:
@@ -67,25 +98,44 @@ class Terminal:
 
     def info(self) -> dict:
         return {"id": self.id, "kind": self.kind, "title": self.title or TITLES[self.kind], "cwd": self.cwd,
-                "alive": self.alive, "exit_code": self.exit_code, "created": self.created}
+                "alive": self.alive, "exit_code": self.exit_code, "created": self.created,
+                "preview": self.preview, "display": self.display}
 
 
 class Terminals:
     def __init__(self) -> None:
         self.items: dict[str, Terminal] = {}
 
-    def spawn(self, kind: str, cwd_rel: str, cols: int, rows: int, cmd: str = "", waypipe_socket: str = "") -> Terminal:
+    def spawn(self, kind: str, cwd_rel: str, cols: int, rows: int, cmd: str = "", waypipe_socket: str = "", preview: bool = False) -> Terminal:
         """kind "run" runs `cmd` (an app you're testing). With waypipe_socket its windows go to the
-        laptop: waypipe's server side connects to that socket (a reverse listener, see tunnels.py)."""
+        laptop: waypipe's server side connects to that socket (a reverse listener, see tunnels.py).
+        With preview=True, it runs under headless Xvfb with screen capture & interaction."""
         cmds = load_commands()
         shell = cmds["shell"]
         cwd = (WORKSPACE / cwd_rel).resolve() if cwd_rel else WORKSPACE
         if not str(cwd).startswith(str(WORKSPACE)) or not cwd.is_dir():
             cwd = WORKSPACE
+        disp_num: int | None = None
+        xvfb_proc: subprocess.Popen | None = None
         if kind == "run":
             app = ["bash", "-lc", f"{cmd}; echo; echo \"[exited with code $?]\""]
+            if preview:
+                disp_num = _find_free_display()
+                if shutil.which("Xvfb"):
+                    try:
+                        xvfb_proc = subprocess.Popen(
+                            ["Xvfb", f":{disp_num}", "-screen", "0", "1024x768x24", "-nolisten", "tcp", "+extension", "GLX"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                        )
+                        sock_path = f"/tmp/.X11-unix/X{disp_num}"
+                        for _ in range(25):
+                            if os.path.exists(sock_path):
+                                break
+                            time.sleep(0.04)
+                    except Exception:
+                        xvfb_proc = None
             argv = (["waypipe", "--socket", waypipe_socket, "--compress", "zstd", "server", "--", *app]
-                    if waypipe_socket else app)
+                    if waypipe_socket and not preview else app)
         elif kind == "shell":
             argv = ["bash", "-lc", f"exec {shell} -l"]
         else:
@@ -102,17 +152,23 @@ class Terminals:
         os.makedirs(RUNTIME_DIR, mode=0o700, exist_ok=True)
         env = {**os.environ, "TERM": "xterm-256color", "COLORTERM": "truecolor", "VB_TERMINAL_KIND": kind,
                "XDG_RUNTIME_DIR": RUNTIME_DIR}
-        if kind == "run":  # toolkits: prefer Wayland (waypipe carries Wayland, not X11)
-            env.update({"GDK_BACKEND": "wayland", "QT_QPA_PLATFORM": "wayland;xcb", "SDL_VIDEODRIVER": "wayland,x11",
-                        "WINIT_UNIX_BACKEND": "wayland", "ELECTRON_OZONE_PLATFORM_HINT": "wayland",
-                        "MOZ_ENABLE_WAYLAND": "1", "WEBKIT_DISABLE_DMABUF_RENDERER": "1"})
+        if kind == "run":
+            if preview and disp_num is not None:
+                env["DISPLAY"] = f":{disp_num}"
+                env.update({"GDK_BACKEND": "x11", "QT_QPA_PLATFORM": "xcb", "SDL_VIDEODRIVER": "x11",
+                            "WINIT_UNIX_BACKEND": "x11"})
+            else:  # toolkits: prefer Wayland (waypipe carries Wayland, not X11)
+                env.update({"GDK_BACKEND": "wayland", "QT_QPA_PLATFORM": "wayland;xcb", "SDL_VIDEODRIVER": "wayland,x11",
+                            "WINIT_UNIX_BACKEND": "wayland", "ELECTRON_OZONE_PLATFORM_HINT": "wayland",
+                            "MOZ_ENABLE_WAYLAND": "1", "WEBKIT_DISABLE_DMABUF_RENDERER": "1"})
         proc = subprocess.Popen(argv, stdin=slave, stdout=slave, stderr=slave, cwd=cwd, env=env,
                                 start_new_session=True, close_fds=True,
                                 preexec_fn=lambda: fcntl.ioctl(0, termios.TIOCSCTTY, 0))
         os.close(slave)
         os.set_blocking(master, False)
         t = Terminal(secrets.token_hex(8), kind, str(cwd.relative_to(WORKSPACE)) if cwd != WORKSPACE else "",
-                     proc, master, title=(f"▶ {cmd[:40]}" if kind == "run" else f"{TITLES[kind]}" + (f" · {cwd.name}" if cwd != WORKSPACE else "")))
+                     proc, master, title=(f"▶ {cmd[:40]}" if kind == "run" else f"{TITLES[kind]}" + (f" · {cwd.name}" if cwd != WORKSPACE else "")),
+                     preview=bool(preview and disp_num is not None), display=disp_num, xvfb_proc=xvfb_proc)
         self.items[t.id] = t
         asyncio.get_running_loop().add_reader(master, self._on_output, t)
         return t
@@ -151,6 +207,7 @@ class Terminals:
         except subprocess.TimeoutExpired:
             t.proc.kill()
             t.exit_code = -9
+        _cleanup_xvfb(t)
         for q in list(t.watchers):
             q.put_nowait(None)
 
@@ -179,6 +236,7 @@ class Terminals:
         t = self.items.pop(tid, None)
         if not t:
             return False
+        _cleanup_xvfb(t)
         if t.alive:
             try:
                 os.killpg(t.proc.pid, signal.SIGHUP)

@@ -23,8 +23,20 @@ fi
 : "${VB_CONTAINER_STORAGE:=}"
 # The port the server listens on (127.0.0.1 only; put a tunnel or reverse proxy in front).
 : "${VB_SERVER_PORT:=8765}"
-# 1 = trust Cloudflare's CF-Connecting-IP header for the client's address (use with Cloudflare Tunnel).
-: "${VB_TRUST_CF:=1}"
+# How the server identifies client IPs for sign-in lockouts:
+#   none       = use the socket peer directly (Tailscale Serve, SSH port forward)
+#   forwarded  = use the rightmost X-Forwarded-For from your local reverse proxy (Caddy, Nginx, Tailscale Funnel)
+#   cloudflare = use CF-Connecting-IP (Cloudflare Tunnel only)
+# Legacy VB_TRUST_CF=1 still maps to VB_PROXY=cloudflare when VB_PROXY isn't set.
+: "${VB_TRUST_CF:=}"
+if [[ -z "${VB_PROXY:-}" ]]; then
+  if [[ "$VB_TRUST_CF" == 1 ]]; then
+    VB_PROXY=cloudflare
+  else
+    VB_PROXY=none
+  fi
+fi
+: "${VB_TRUST_CF:=0}"
 # The name your authenticator app shows for this server.
 : "${VB_TOTP_ISSUER:=VibeBuilder}"
 # Builder limits.
@@ -33,5 +45,5 @@ fi
 # Optional: the laptop app's app id (keychain and saved settings are tied to it).
 : "${VB_APP_IDENTIFIER:=}"
 
-export VB_PUBLIC_URL VB_WORKSPACE_DIR VB_STATE_DIR VB_CONTAINER_STORAGE VB_SERVER_PORT VB_TRUST_CF \
+export VB_PUBLIC_URL VB_WORKSPACE_DIR VB_STATE_DIR VB_CONTAINER_STORAGE VB_SERVER_PORT VB_PROXY VB_TRUST_CF \
   VB_TOTP_ISSUER VB_BUILDER_MEMORY VB_BUILDER_CPUS VB_APP_IDENTIFIER

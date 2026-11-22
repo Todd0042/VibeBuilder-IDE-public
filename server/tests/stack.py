@@ -67,7 +67,7 @@ print("Add the greeting feature\\n\\n- Add feature.js\\n- Wire it into app.js")
     agent_port, server_port = _port(), server_port or _port()
     env = {**os.environ, "VB_WORKSPACE": str(ws), "VB_DATA": str(data), "VB_AGENT_TOKEN_FILE": str(link / "agent_token"),
            "VB_AGENT_URL": f"ws://127.0.0.1:{agent_port}", "VB_CHANGESET_QUIET_SEC": "1.5", "VB_FILE_SETTLE_SEC": "0.5",
-           "VB_TRUST_CF": "1", "HOME": str(base / "home"),
+           "VB_PROXY": "cloudflare", "HOME": str(base / "home"),
            "VB_CHECKPOINT_DELAY_SEC": "2", "VB_CHECKPOINT_CLAUDE": str(fake)}
     (base / "home" / ".config" / "vibebuilder").mkdir(parents=True)
     # bash, not fish: fish asks the terminal questions that only a real terminal (xterm.js) answers

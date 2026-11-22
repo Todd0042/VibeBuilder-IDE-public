@@ -8,6 +8,7 @@ const memory = new Map<string, string>();
 export const canTunnel = inTauri;
 export const canAdb = false;
 export const canGui = false;
+export const canPreview = true;
 export const canQrScan = inTauri;
 
 export async function tokenGet(server: string): Promise<string | null> {

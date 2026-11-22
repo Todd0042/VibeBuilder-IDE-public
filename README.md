@@ -63,7 +63,7 @@ It splits into three pieces:
 
 ## 🔁 How It Works in 3 Steps
 
-1. **Set Up the Desktop**: Copy `vibebuilder.env.example` to `vibebuilder.env`, then `vibebuilder install`, `build` and `start`. Put a Cloudflare Tunnel (or any HTTPS reverse proxy) in front of it.
+1. **Set Up the Desktop**: Copy `vibebuilder.env.example` to `vibebuilder.env`, then `vibebuilder install`, `build` and `start`. Put Tailscale Serve, Cloudflare Tunnel, or another HTTPS reverse proxy in front of it (see the [Remote Access Setup Guide](remote-access.md)).
 2. **Pair Your Laptop or Phone**: Open the app, enter your server's address (or point your phone's camera at the pairing QR code from `vibebuilder pair`), and confirm the 30-second one-time code. Then sign in with your authenticator app's 6-digit code.
 3. **Code & Review**: Open a project, start a Claude or agy terminal, and watch the **Changes** timeline fill up with exactly what the agent changed, file by file, ready to review, restore or undo.
 
@@ -118,7 +118,7 @@ It splits into three pieces:
 * **📜 Starter Agent Rules**: A project without agent rules gets an `AGENTS.md` the first time you open it (read by agy directly, and by Claude Code through a one-line `CLAUDE.md`). It covers security first, a 300-line file limit, committing after every session, no silent errors (every failure shown in full to whoever runs the code, secrets masked, and only a plain message plus reference ID for site visitors), proving changes work, and not guessing or wrecking things. Edit it, or delete it: it never comes back.
 * **💾 Auto-Save That Stays Out of the Way**: Each changed file saves itself 3 minutes after its last change (a new change restarts the timer), plus a big orange **Save All** button (`Ctrl+Alt+S`). If an agent edits a file you have unsaved changes in, you choose: Keep mine, Take theirs or Compare.
 * **🖥️ Terminals That Keep Running**: Claude, agy and shell terminals live in the builder and keep working while the app is closed. Reopening replays the scrollback.
-* **📱 Native Android Client**: Supervise agents and code from your phone or tablet on the go. Built with Tauri 2 + Svelte 5 sharing state with the desktop workbench. Features an on-screen CodeMirror symbol bar (`{`, `}`, `=>`, `;`, `Tab`), quick touch keys above the soft keyboard in xterm.js (`Esc`, `Ctrl+C`, `|`, `~`, arrow keys), a camera QR pairing scanner, agent launch flags dialog (Skip Permissions, Remote Control), and a persistent Android foreground service (`TunnelForegroundService`) so port forwarding and connections stay alive in the background.
+* **📱 Native Android Client**: Supervise agents and code from your phone or tablet on the go. Built with Tauri 2 + Svelte 5 sharing state with the desktop workbench. Features an on-screen CodeMirror symbol bar (`{`, `}`, `=>`, `;`, `Tab`), quick touch keys above the soft keyboard in xterm.js (`Esc`, `Ctrl+C`, `|`, `~`, arrow keys), a camera QR pairing scanner, agent launch flags dialog (Skip Permissions, Remote Control), interactive in-app Screen Preview to verify GUI apps (Qt, GTK, SDL, Tkinter, etc.) with touch clicks and keyboard input directly on mobile, and a persistent Android foreground service (`TunnelForegroundService`) so port forwarding and connections stay alive in the background.
 * **▶️ Per-App Window Streaming**: **Run App** (`F5`) starts your app in the builder, and its windows, dialogs and popups open on your laptop as normal windows you can move and resize (Wayland apps: Qt, GTK/Tauri, SDL, raylib, GLFW). No full-desktop streaming.
 * **🌐 Port Forwarding & Phone Testing**: Forward any dev server in the builder to `localhost` on the laptop with one click. A phone plugged into the laptop shows up in the builder's `adb devices`, so `./gradlew installDebug` just works.
 * **🔐 Sign-In Before Anything**: Nothing but the sign-in screen answers until you're signed in: no file, no terminal, no health page. A paired device (at most 3; tokens stored in your desktop keychain or Android encrypted storage) plus the current authenticator code, asked when the app opens.
@@ -150,7 +150,7 @@ bin/vibebuilder start
 bin/vibebuilder new-totp
 bin/vibebuilder auth-qr
 ```
-Then make `VB_PUBLIC_URL` reach `127.0.0.1:8765` over HTTPS. With Cloudflare Tunnel, see [deploy/cloudflared.example.yml](deploy/cloudflared.example.yml). Behind any other reverse proxy, set `VB_TRUST_CF=0`.
+Then make `VB_PUBLIC_URL` reach `127.0.0.1:8765` over HTTPS — no domain is required if you use Tailscale Serve (`https://*.ts.net`). See the **[Remote Access Setup Guide](remote-access.md)** for step-by-step instructions covering Tailscale Serve/Funnel, [Cloudflare Tunnel](deploy/cloudflared.example.yml), DuckDNS + [Caddy](deploy/Caddyfile.example)/Nginx, and SSH port forwarding.
 
 ### 🐧 Laptop App: Linux AppImage
 Download the latest `VibeBuilder-IDE_<version>_amd64.AppImage` and `SHA256SUMS` from [GitHub Releases](https://github.com/Todd0042/VibeBuilder-IDE-public/releases):
@@ -256,8 +256,8 @@ One WebSocket per app carries file changes, git status, change sets and terminal
 ### The Workspace Jail ([server/src/vbide/jail.py](server/src/vbide/jail.py))
 Every file operation opens paths relative to the workspace with `openat2(RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV)`. The kernel itself refuses `..`, symlinks (including ones an agent plants), `/proc` magic links and mount crossings. The end-to-end tests try all of these.
 
-### Client Addresses Behind a Tunnel
-With `VB_TRUST_CF=1` the lockouts use Cloudflare's `CF-Connecting-IP` header. Only turn this on when Cloudflare Tunnel is the sole way in (the server listens on `127.0.0.1` only); behind another proxy, a client could fake the header.
+### Client Addresses Behind a Tunnel or Reverse Proxy
+Set `VB_PROXY` in `vibebuilder.env` to match how traffic reaches `127.0.0.1:8765`: `none` (default: socket peer, safe for Tailscale Serve / SSH tunnels), `forwarded` (reads the proxy-appended rightmost `X-Forwarded-For` entry for Caddy, Nginx, or Tailscale Funnel), or `cloudflare` (reads `CF-Connecting-IP` for Cloudflare Tunnel; legacy `VB_TRUST_CF=1` also enables this). See [remote-access.md](remote-access.md) for details.
 
 ---
 
@@ -294,13 +294,14 @@ The first time a project is opened, if it has none of `AGENTS.md`, `CLAUDE.md`, 
 
 ## 5. App Testing: Window Streaming, Ports & Phone
 
-All three ride the signed-in session (`/api/v1/tunnel`, `/api/v1/reverse`) and stop when you lock or close the app. The laptop only connects to targets it registered itself.
+All three ride the signed-in session (`/api/v1/tunnel`, `/api/v1/reverse`, `/api/v1/preview`) and stop when you lock or close the app. The client only connects to targets it registered itself.
 
-* **Run App** (`F5`): runs a command in the builder under `waypipe server`; the laptop runs the `waypipe` client, so each window, dialog and popup arrives as its own native window, scaled and resizable. Output goes to a ▶ terminal tab, and closing the tab stops the app. Wayland apps only (no X11). No audio yet.
+* **Run App (`F5` / Desktop)**: runs a command in the builder under `waypipe server`; the laptop runs the `waypipe` client, so each window, dialog and popup arrives as its own native window, scaled and resizable. Output goes to a ▶ terminal tab, and closing the tab stops the app. Wayland apps only (no X11). No audio yet.
+* **Run App (Mobile Screen Preview)**: on Android, selecting **Run with preview** launches the app in a headless virtual display (`Xvfb`) and streams the display live into an interactive **Screen Preview** tab in the terminal area. You can verify that the app opened, inspect UI layout, tap elements (translated via `xdotool`), and type into input fields, with a seamless toggle to **Console** for viewing runtime logs.
 * **Ports**: lists what's listening in the builder and forwards a port to `localhost` on the laptop (it picks another local port if that one is taken).
 * **Phone**: the builder's `adb` uses the laptop's adb server through a reverse tunnel, so a phone plugged into the laptop is visible to Gradle and `adb` in the builder.
 
-The laptop needs `waypipe` (windows) and `android-tools` (phone).
+The desktop needs `waypipe` (windows) and `android-tools` (phone). The builder image includes `Xvfb`, `xdotool`, and image capture utilities for mobile screen preview.
 
 ---
 
@@ -332,7 +333,7 @@ Arch Linux (`base-devel`) with fish, and:
 | `VB_STATE_DIR` | `~/.local/share/vibebuilder` | Secrets, history, the builder's home, Nix store, pacman cache (must not overlap the workspace) |
 | `VB_CONTAINER_STORAGE` | *(Podman's default)* | Put Podman's images on a bigger disk (written to `~/.config/containers/storage.conf` if it doesn't exist) |
 | `VB_SERVER_PORT` | `8765` | The `127.0.0.1` port your tunnel or proxy forwards to |
-| `VB_TRUST_CF` | `1` | Use `CF-Connecting-IP` for client addresses (Cloudflare Tunnel only; set `0` otherwise) |
+| `VB_PROXY` | `none` | How client IPs arrive for lockouts: `none`, `forwarded` (Caddy/Nginx/Funnel), or `cloudflare` (legacy `VB_TRUST_CF=1` still works) |
 | `VB_TOTP_ISSUER` | `VibeBuilder` | The name your authenticator app shows |
 | `VB_BUILDER_MEMORY` / `VB_BUILDER_CPUS` | `16g` / all cores | Builder limits |
 | `VB_APP_IDENTIFIER` | *(tauri.conf.json's)* | Laptop & Android apps: your own app id (keychain entry on desktop, keystore on Android, and saved settings belong to it) |
@@ -396,7 +397,8 @@ VibeBuilder-IDE/
 ├── mobile/                      # Android client (Tauri 2 + Svelte 5)
 │   ├── src/                     # mobile workbench, action sheets, symbol bar, terminal touch keys
 │   └── src-tauri/               # Rust + Kotlin: VbAndroidPlugin, foreground tunnel service, QR scanner
-├── deploy/                      # Podman quadlet template, systemd unit, cloudflared example
+├── deploy/                      # Podman quadlet template, systemd unit, cloudflared & Caddy examples
+├── remote-access.md             # Remote HTTPS setup: Tailscale Serve/Funnel, Cloudflare, Caddy/Nginx, SSH
 ├── bin/                         # vibebuilder, vb-app, vb-android, vb-builder-create, vb-gpu-sync
 └── vibebuilder.env.example      # every machine-specific setting
 ```

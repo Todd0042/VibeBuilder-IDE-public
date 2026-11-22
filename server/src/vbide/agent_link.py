@@ -105,7 +105,8 @@ def _clean_terminal(t: Any) -> dict | None:
     return {"id": t["id"], "kind": t.get("kind") if t.get("kind") in KINDS else "shell",
             "title": str(t.get("title") or "")[:80], "cwd": str(t.get("cwd") or "")[:500],
             "alive": bool(t.get("alive")), "exit_code": t.get("exit_code") if isinstance(t.get("exit_code"), int) else None,
-            "created": float(t.get("created") or 0)}
+            "created": float(t.get("created") or 0), "preview": bool(t.get("preview")),
+            "display": t.get("display") if isinstance(t.get("display"), int) else None}
 
 
 @router.get("/terminals")
@@ -120,6 +121,7 @@ class NewTerminal(BaseModel):
     cwd: str = Field(default="", max_length=4096)
     cmd: str = Field(default="", max_length=2000)  # kind "run": the app to start
     waypipe_socket: str = Field(default="", max_length=200)  # its windows go to the laptop through this
+    preview: bool = False
     cols: int = Field(default=120, ge=10, le=1000)
     rows: int = Field(default=30, ge=4, le=500)
 
@@ -204,6 +206,58 @@ async def pty(ws: WebSocket, tid: str) -> None:
                         c, r = m.get("cols"), m.get("rows")
                         if isinstance(c, int) and isinstance(r, int) and 1 <= c <= 1000 and 1 <= r <= 500:
                             await up.send(json.dumps({"type": "resize", "cols": c, "rows": r}))
+
+            tasks = {asyncio.ensure_future(down()), asyncio.ensure_future(upward()),
+                     asyncio.ensure_future(ended.wait())}
+            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            for t in pending:
+                t.cancel()
+    except (WebSocketDisconnect, websockets.ConnectionClosed, OSError, websockets.InvalidStatus):
+        pass
+    finally:
+        remove()
+        try:
+            await ws.close(code=4401 if ended.is_set() else 1000)
+        except RuntimeError:
+            pass
+
+
+@router.websocket("/preview/{tid}")
+async def preview(ws: WebSocket, tid: str) -> None:
+    """Screen preview proxy for testing GUI apps (e.g. on mobile/web).
+    Streams JPEG frames down to the app, accepts {"type": "click"|"type"|"key"|"refresh"} up to builder."""
+    s = await ws_session(ws)
+    if s is None:
+        return
+    if not _ID.match(tid):
+        await ws.close(code=4400)
+        return
+    svc = ws.app.state.svc
+    loop = asyncio.get_running_loop()
+    ended = asyncio.Event()
+    remove = svc.sessions.add_closer(s, lambda: loop.call_soon_threadsafe(ended.set))
+    try:
+        async with websockets.connect(
+            f"{svc.agent.ws_base}/preview/{tid}",
+            max_size=4 * 1024 * 1024,
+            additional_headers={"Authorization": f"Bearer {svc.agent.token}"}
+        ) as up:
+            await ws.send_text(json.dumps({"type": "ready"}))
+
+            async def down() -> None:
+                async for msg in up:
+                    if isinstance(msg, bytes):
+                        await ws.send_bytes(msg)
+                    else:
+                        await ws.send_text(msg)
+
+            async def upward() -> None:
+                while True:
+                    raw = await ws.receive_text()
+                    if len(raw) > 2048:
+                        continue
+                    svc.sessions.activity(s)
+                    await up.send(raw)
 
             tasks = {asyncio.ensure_future(down()), asyncio.ensure_future(upward()),
                      asyncio.ensure_future(ended.wait())}

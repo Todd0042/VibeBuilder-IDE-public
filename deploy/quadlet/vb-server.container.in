@@ -22,7 +22,7 @@ Volume=@VB_WORKSPACE_DIR@:/workspace:rw,nodev,nosuid,noexec
 Volume=@VB_STATE_DIR@/server-data:/data
 Volume=@VB_STATE_DIR@/link:/run/vb-link:ro
 Environment=VB_PUBLIC_URL=@VB_PUBLIC_URL@
-Environment=VB_TRUST_CF=@VB_TRUST_CF@
+Environment=VB_PROXY=@VB_PROXY@
 Environment=VB_TOTP_ISSUER=@VB_TOTP_ISSUER@
 Environment=VB_AGENT_URL=ws://vb-builder:7070
 

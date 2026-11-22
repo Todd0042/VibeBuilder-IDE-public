@@ -68,9 +68,9 @@ RUN rustup default stable \
  && rustup target add x86_64-pc-windows-gnu wasm32-unknown-unknown aarch64-linux-android armv7-linux-androideabi x86_64-linux-android \
  && chmod -R a+rwX /opt/rustup
 
-# ---- app testing: waypipe (app windows on the laptop) ------------------------------------------------
+# ---- app testing: waypipe (app windows on the laptop) + xdotool (mobile app screen preview) ---------
 # (a later layer of its own, so adding tools here doesn't rebuild everything above)
-RUN pacman -Sy --noconfirm --needed waypipe && rm -rf /var/cache/pacman/pkg/*
+RUN pacman -Sy --noconfirm --needed waypipe xdotool && rm -rf /var/cache/pacman/pkg/*
 
 # ---- the coder user (you), with passwordless sudo -------------------------------------------------------
 RUN (getent group 1000 >/dev/null && groupmod -n coder "$(getent group 1000 | cut -d: -f1)" || groupadd -g 1000 coder) \

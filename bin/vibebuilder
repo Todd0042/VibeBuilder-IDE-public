@@ -28,7 +28,8 @@ die() { printf '\033[1;31m[vibebuilder]\033[0m %s\n' "$*" >&2; exit 1; }
 need_podman() { command -v podman >/dev/null || die "Podman isn't installed. Run: sudo pacman -S podman"; }
 need_config() {
   [[ "$VB_PUBLIC_URL" =~ ^https?://[^/[:space:]]+/?$ ]] || die "Set VB_PUBLIC_URL in $VB_ENV_FILE (copy vibebuilder.env.example), e.g. https://ide.example.com"
-  [[ "$VB_TRUST_CF" == 0 || "$VB_TRUST_CF" == 1 ]] || die "VB_TRUST_CF must be 0 or 1"
+  [[ "$VB_PROXY" == none || "$VB_PROXY" == cloudflare || "$VB_PROXY" == forwarded ]] || die "VB_PROXY must be none, cloudflare, or forwarded"
+  [[ -z "$VB_TRUST_CF" || "$VB_TRUST_CF" == 0 || "$VB_TRUST_CF" == 1 ]] || die "VB_TRUST_CF must be 0 or 1"
   [[ "$VB_SERVER_PORT" =~ ^[0-9]+$ ]] || die "VB_SERVER_PORT must be a number"
   case "$VB_WORKSPACE_DIR/" in "$VB_STATE_DIR/"*) die "VB_WORKSPACE_DIR can't be inside VB_STATE_DIR (agents would see the secrets)";; esac
   case "$VB_STATE_DIR/" in "$VB_WORKSPACE_DIR/"*) die "VB_STATE_DIR can't be inside VB_WORKSPACE_DIR (agents would see the secrets)";; esac
@@ -38,7 +39,7 @@ need_config() {
 render_units() {
   local t c
   t="$(<"$REPO/deploy/quadlet/vb-server.container.in")"
-  for k in VB_PUBLIC_URL VB_WORKSPACE_DIR VB_STATE_DIR VB_SERVER_PORT VB_TRUST_CF VB_TOTP_ISSUER; do
+  for k in VB_PUBLIC_URL VB_WORKSPACE_DIR VB_STATE_DIR VB_SERVER_PORT VB_PROXY VB_TOTP_ISSUER; do
     t="${t//@$k@/${!k}}"
   done
   mkdir -p "$QUADLET_DIR"

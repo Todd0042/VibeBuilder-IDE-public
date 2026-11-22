@@ -37,7 +37,7 @@ export interface RangeDetail { since: number; until: number; files: FileDiff[] }
 export interface FileVersion { id: number; ts: number; before: string | null; after: string | null; changeset: number | null; source: Source }
 
 export type TerminalKind = "claude" | "agy" | "shell" | "run";
-export interface TerminalInfo { id: string; kind: TerminalKind; title: string; cwd: string; alive: boolean; exit_code: number | null; created: number }
+export interface TerminalInfo { id: string; kind: TerminalKind; title: string; cwd: string; alive: boolean; exit_code: number | null; created: number; preview?: boolean; display?: number | null }
 
 export interface GitFile { path: string; xy: string }
 export interface GitStatus { repo: boolean; error?: string; root?: string; branch?: string; ahead?: number; behind?: number; files?: GitFile[] }

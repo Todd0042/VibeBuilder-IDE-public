@@ -292,6 +292,49 @@ def test_tunnels(stack):
     c.delete(f"/api/v1/terminals/{r.json()['id']}")
 
 
+def test_screen_preview(stack):
+    """End-to-end screen preview for testing GUI apps (e.g. on mobile/web)."""
+    c, session = signed_in(stack, "203.0.113.25")
+    wsurl = stack["wsurl"]
+
+    # Start a run terminal with preview=True
+    r = c.post("/api/v1/terminals", json={"kind": "run", "cmd": "echo preview-test; sleep 5", "preview": True})
+    assert r.status_code == 200, r.text
+    t = r.json()
+    assert t["kind"] == "run"
+    assert t["preview"] is True
+    tid = t["id"]
+
+    async def scenario():
+        url = f"{wsurl}/api/v1/preview/{tid}"
+        async with websockets.connect(url, max_size=4 * 1024 * 1024) as ws:
+            # 1. Auth first
+            await ws.send(json.dumps({"type": "auth", "session": session}))
+            ready_raw = await asyncio.wait_for(ws.recv(), 5)
+            ready = json.loads(ready_raw)
+            assert ready.get("type") == "ready"
+
+            # 2. Test interaction messages (clicks, type, refresh)
+            await ws.send(json.dumps({"type": "click", "x": 0.5, "y": 0.5, "button": 1}))
+            await ws.send(json.dumps({"type": "type", "text": "hello"}))
+            await ws.send(json.dumps({"type": "key", "key": "Return"}))
+            await ws.send(json.dumps({"type": "refresh"}))
+
+            # 3. May receive frame bytes if capture tool is present
+            try:
+                msg = await asyncio.wait_for(ws.recv(), 2)
+                if isinstance(msg, str):
+                    ev = json.loads(msg)
+                    assert ev.get("type") in ("ready", "exit")
+                else:
+                    assert isinstance(msg, bytes) and len(msg) > 0
+            except asyncio.TimeoutError:
+                pass
+
+    asyncio.run(scenario())
+    c.delete(f"/api/v1/terminals/{tid}")
+
+
 def test_media_and_hidden_folders(stack):
     c, _session = signed_in(stack, "198.51.100.30")
     ws = stack["ws"]

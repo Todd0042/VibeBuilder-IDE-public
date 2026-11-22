@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
   import TerminalView from "./TerminalView.svelte";
+  import ScreenPreview from "./ScreenPreview.svelte";
   import { testing } from "@state/testing.svelte";
   import { terminals } from "@state/terminals.svelte";
   import { ui } from "@state/ui.svelte";
@@ -12,9 +13,16 @@
 
   let ctrl = $state(false);
   let alt = $state(false);
+  let viewMode = $state<"screen" | "console">("screen");
+
+  const activeTerminal = $derived(terminals.list.find((t) => t.id === terminals.activeId));
 
   function pick(id: string) {
     terminals.activeId = id;
+    const t = terminals.list.find((x) => x.id === id);
+    if (t?.kind === "run" && t.preview) {
+      viewMode = "screen";
+    }
     setTimeout(() => { terminals.fit(id); terminals.focus(id); }, 20);
   }
 
@@ -52,6 +60,12 @@
         </div>
       {/each}
     </div>
+    {#if activeTerminal?.kind === "run" && activeTerminal.preview}
+      <div class="view-switch">
+        <button class="seg-btn" class:active={viewMode === "screen"} onclick={() => (viewMode = "screen")}>Screen</button>
+        <button class="seg-btn" class:active={viewMode === "console"} onclick={() => { viewMode = "console"; setTimeout(() => terminals.fit(activeTerminal.id), 20); }}>Console</button>
+      </div>
+    {/if}
     <button class="runbtn" onclick={() => testing.runApp()}>▶</button>
     {#each NEW as n}
       <button class="newbtn k-{n.kind}" onclick={() => terminals.create(n.kind)}>+{n.label}</button>
@@ -60,7 +74,11 @@
 
   <div class="body">
     {#each terminals.list as t (t.id)}
-      <TerminalView id={t.id} active={t.id === terminals.activeId} />
+      {#if t.id === terminals.activeId && t.kind === "run" && t.preview && viewMode === "screen"}
+        <ScreenPreview terminal={t} />
+      {:else}
+        <TerminalView id={t.id} active={t.id === terminals.activeId} />
+      {/if}
     {/each}
     {#if !terminals.list.length}
       <div class="empty">
@@ -74,7 +92,7 @@
     {/if}
   </div>
 
-  {#if terminals.activeId}
+  {#if terminals.activeId && (viewMode !== "screen" || !activeTerminal?.preview)}
     <div class="kbar">
       <button class="k" onpointerdown={(e) => e.preventDefault()} onclick={() => sendKey("\x1b")}>Esc</button>
       <button class="k" onpointerdown={(e) => e.preventDefault()} onclick={() => sendKey("\t")}>Tab</button>
@@ -109,6 +127,15 @@
   .name { font-size: 13px; white-space: nowrap; }
   .small { font-size: 11px; }
   .x { width: 24px; height: 24px; display: grid; place-items: center; border: 0; border-radius: 5px; background: none; color: var(--dim); }
+  .view-switch {
+    display: inline-flex; height: 30px; padding: 2px; border-radius: 6px; background: #131720; border: 1px solid var(--line-2); flex: none;
+  }
+  .seg-btn {
+    border: 0; border-radius: 4px; background: none; color: var(--dim); font-size: 12px; font-weight: 600; padding: 0 8px; height: 100%;
+  }
+  .seg-btn.active {
+    background: #232938; color: #fff;
+  }
   .runbtn { height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid #4a3a22; background: #2a2219; color: #ffcf8a; font-weight: 700; flex: none; }
   .newbtn { height: 30px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--line-2); background: #1d2129; color: var(--dim); font-size: 12px; flex: none; }
   .newbtn.k-claude { border-color: #6b432a; color: #ffc49a; }

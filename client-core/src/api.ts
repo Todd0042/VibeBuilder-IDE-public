@@ -129,9 +129,9 @@ export class Api {
 
   // ---- terminals and git -------------------------------------------------------------------------
   terminals() { return this.req<{ terminals: TerminalInfo[] }>("GET", "/api/v1/terminals", undefined, { background: true }); }
-  newTerminal(kind: TerminalKind, cwd: string, cols: number, rows: number, run?: { cmd: string; waypipeSocket?: string }) {
+  newTerminal(kind: TerminalKind, cwd: string, cols: number, rows: number, run?: { cmd: string; waypipeSocket?: string; preview?: boolean }) {
     return this.req<TerminalInfo>("POST", "/api/v1/terminals",
-      { kind, cwd, cols, rows, cmd: run?.cmd ?? "", waypipe_socket: run?.waypipeSocket ?? "" });
+      { kind, cwd, cols, rows, cmd: run?.cmd ?? "", waypipe_socket: run?.waypipeSocket ?? "", preview: run?.preview ?? false });
   }
   ports() { return this.req<{ ports: { port: number; process: string }[] }>("GET", "/api/v1/ports", undefined, { background: true }); }
   closeTerminal(id: string) { return this.req("DELETE", `/api/v1/terminals/${encodeURIComponent(id)}`); }

@@ -16,6 +16,7 @@ import asyncio
 import hmac
 import json
 import os
+import shutil
 import subprocess
 import time
 from collections import deque
@@ -58,6 +59,7 @@ class NewTerminal(BaseModel):
     cwd: str = ""
     cmd: str = Field(default="", max_length=2000)
     waypipe_socket: str = Field(default="", pattern=r"^(/tmp/vb-rev/[a-z0-9-]{1,40}\.sock)?$")
+    preview: bool = False
     cols: int = Field(default=120, ge=10, le=1000)
     rows: int = Field(default=30, ge=4, le=500)
 
@@ -68,7 +70,7 @@ async def new_terminal(body: NewTerminal) -> dict:
         raise HTTPException(429, "That's a lot of terminals. Close some first.")
     if body.kind == "run" and not body.cmd.strip():
         raise HTTPException(400, "What should it run?")
-    return terms.spawn(body.kind, body.cwd, body.cols, body.rows, body.cmd, body.waypipe_socket).info()
+    return terms.spawn(body.kind, body.cwd, body.cols, body.rows, body.cmd, body.waypipe_socket, body.preview).info()
 
 
 @app.delete("/terminals/{tid}")
@@ -76,6 +78,103 @@ async def close_terminal(tid: str) -> dict:
     if not terms.close(tid):
         raise HTTPException(404, "No such terminal")
     return {"ok": True}
+
+
+@app.websocket("/preview/{tid}")
+async def preview(ws: WebSocket, tid: str) -> None:
+    if not _authorized(ws.headers):
+        await ws.close(code=4401)
+        return
+    t = terms.items.get(tid)
+    if not t or not t.preview or t.display is None:
+        await ws.close(code=4404)
+        return
+    await ws.accept()
+    await ws.send_text(json.dumps({"type": "ready", "display": t.display, "width": 1024, "height": 768}))
+
+    disp = f":{t.display}"
+    snap_event = asyncio.Event()
+    snap_event.set()
+
+    async def capture_loop():
+        while t.alive:
+            if shutil.which("import"):
+                try:
+                    p = await asyncio.create_subprocess_exec(
+                        "import", "-window", "root", "-quality", "65", "jpg:-",
+                        env={**os.environ, "DISPLAY": disp},
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.DEVNULL
+                    )
+                    stdout, _ = await asyncio.wait_for(p.communicate(), timeout=2.0)
+                    if stdout:
+                        await ws.send_bytes(stdout)
+                except Exception:
+                    pass
+            try:
+                await asyncio.wait_for(snap_event.wait(), timeout=0.35)
+                snap_event.clear()
+            except asyncio.TimeoutError:
+                pass
+
+    async def input_loop():
+        while True:
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except Exception:
+                continue
+            mtype = msg.get("type")
+            if mtype == "click":
+                x_norm = float(msg.get("x", 0))
+                y_norm = float(msg.get("y", 0))
+                btn = int(msg.get("button", 1))
+                px = max(0, min(1024, int(x_norm * 1024)))
+                py = max(0, min(768, int(y_norm * 768)))
+                if shutil.which("xdotool"):
+                    try:
+                        subprocess.run(
+                            ["xdotool", "mousemove", str(px), str(py), "click", str(btn)],
+                            env={**os.environ, "DISPLAY": disp}, timeout=1,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                        )
+                    except Exception:
+                        pass
+                snap_event.set()
+            elif mtype == "type":
+                text = str(msg.get("text", ""))[:200]
+                if text and shutil.which("xdotool"):
+                    try:
+                        subprocess.run(
+                            ["xdotool", "type", "--clearmodifiers", text],
+                            env={**os.environ, "DISPLAY": disp}, timeout=2,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                        )
+                    except Exception:
+                        pass
+                snap_event.set()
+            elif mtype == "key":
+                key = str(msg.get("key", ""))[:50]
+                if key and shutil.which("xdotool"):
+                    try:
+                        subprocess.run(
+                            ["xdotool", "key", key],
+                            env={**os.environ, "DISPLAY": disp}, timeout=1,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                        )
+                    except Exception:
+                        pass
+                snap_event.set()
+            elif mtype == "refresh":
+                snap_event.set()
+
+    tasks = [asyncio.ensure_future(capture_loop()), asyncio.ensure_future(input_loop())]
+    try:
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for p in pending:
+            p.cancel()
+    except (WebSocketDisconnect, Exception):
+        pass
 
 
 @app.websocket("/pty/{tid}")

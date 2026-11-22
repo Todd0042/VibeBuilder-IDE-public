@@ -143,3 +143,89 @@ export class PtySocket {
     if (this.ready) this.send({ type: "resize", cols, rows });
   }
 }
+
+export interface PreviewHandlers {
+  onFrame: (blob: Blob) => void;
+  onReady?: (info: { width: number; height: number; display: number }) => void;
+  onExit?: (code: number | null) => void;
+  onState?: (state: "connecting" | "open" | "closed") => void;
+}
+
+export class PreviewSocket {
+  private ws: WebSocket | null = null;
+  private stopped = false;
+  private retry = 1000;
+  private ready = false;
+
+  constructor(private api: Api, public id: string, private h: PreviewHandlers) {}
+
+  start() {
+    this.stopped = false;
+    this.open();
+  }
+
+  stop() {
+    this.stopped = true;
+    this.ws?.close();
+    this.ws = null;
+  }
+
+  private open() {
+    if (this.stopped || !this.api.session) return;
+    this.h.onState?.("connecting");
+    this.ready = false;
+    const ws = new WebSocket(this.api.wsUrl(`/api/v1/preview/${encodeURIComponent(this.id)}`));
+    ws.binaryType = "blob";
+    this.ws = ws;
+    ws.onopen = () => ws.send(JSON.stringify({ type: "auth", session: this.api.session }));
+    ws.onmessage = (m) => {
+      if (m.data instanceof Blob) {
+        this.h.onFrame(m.data);
+        return;
+      }
+      if (m.data instanceof ArrayBuffer) {
+        this.h.onFrame(new Blob([m.data], { type: "image/jpeg" }));
+        return;
+      }
+      let ev: any;
+      try { ev = JSON.parse(m.data); } catch { return; }
+      if (ev.type === "ready") {
+        this.ready = true;
+        this.retry = 1000;
+        this.h.onState?.("open");
+        this.h.onReady?.(ev);
+      } else if (ev.type === "exit") {
+        this.h.onExit?.(typeof ev.code === "number" ? ev.code : null);
+      }
+    };
+    ws.onclose = (ev) => {
+      this.ready = false;
+      this.h.onState?.("closed");
+      if (ev.code === SIGNED_OUT || this.stopped) return;
+      setTimeout(() => this.open(), this.retry);
+      this.retry = Math.min(this.retry * 2, 10_000);
+    };
+  }
+
+  private send(msg: object) {
+    if (this.ready && this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(msg));
+    }
+  }
+
+  click(x: number, y: number, button = 1) {
+    this.send({ type: "click", x, y, button });
+  }
+
+  type(text: string) {
+    this.send({ type: "type", text });
+  }
+
+  key(key: string) {
+    this.send({ type: "key", key });
+  }
+
+  refresh() {
+    this.send({ type: "refresh" });
+  }
+}

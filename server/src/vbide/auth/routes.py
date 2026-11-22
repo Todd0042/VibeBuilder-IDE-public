@@ -18,10 +18,22 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 def client_ip(request_or_ws) -> str:
     svc: Services = request_or_ws.app.state.svc
-    if svc.settings.trust_cf_header:
+    mode = svc.settings.proxy_mode
+    if mode == "cloudflare":
         cf = request_or_ws.headers.get("cf-connecting-ip", "").strip()
         if cf:
             return cf[:64]
+    elif mode == "forwarded":
+        # Take the rightmost value appended by our local reverse proxy (Caddy, Nginx, Tailscale Funnel),
+        # never the leftmost value that a client can spoof in X-Forwarded-For.
+        xff = request_or_ws.headers.get("x-forwarded-for", "")
+        if xff:
+            last = xff.rsplit(",", 1)[-1].strip()
+            if last:
+                return last[:64]
+        real_ip = request_or_ws.headers.get("x-real-ip", "").strip()
+        if real_ip:
+            return real_ip[:64]
     return (request_or_ws.client.host if request_or_ws.client else "unknown")[:64]
 
 

@@ -21,6 +21,18 @@ def _list(name: str, default: str) -> list[str]:
     return [x.strip() for x in raw.split(",") if x.strip() and x.strip() != "*"]
 
 
+def _proxy_mode() -> str:
+    raw = os.environ.get("VB_PROXY", "").strip().lower()
+    if raw:
+        if raw in ("none", "cloudflare", "forwarded"):
+            return raw
+        raise ValueError(f"Unknown VB_PROXY={raw!r}; expected none, cloudflare, or forwarded")
+    cf = os.environ.get("VB_TRUST_CF", "").strip()
+    if cf == "1":
+        return "cloudflare"
+    return "none"
+
+
 @dataclass(frozen=True)
 class Settings:
     workspace: Path = field(default_factory=lambda: Path(os.environ.get("VB_WORKSPACE", "/workspace")))
@@ -33,8 +45,8 @@ class Settings:
     # Where devices reach this server (shown in the pairing QR), and the name authenticator apps show.
     public_url: str = field(default_factory=lambda: os.environ.get("VB_PUBLIC_URL", "").strip().rstrip("/"))
     totp_issuer: str = field(default_factory=lambda: os.environ.get("VB_TOTP_ISSUER", "").strip() or "VibeBuilder")
-    # Behind Cloudflare the client's address arrives in CF-Connecting-IP; the socket peer is the tunnel.
-    trust_cf_header: bool = field(default_factory=lambda: os.environ.get("VB_TRUST_CF", "1") == "1")
+    # How client IPs arrive behind a local tunnel/proxy: none | cloudflare | forwarded.
+    proxy_mode: str = field(default_factory=_proxy_mode)
 
     max_devices: int = field(default_factory=lambda: _int("VB_MAX_DEVICES", 3))
     session_idle_sec: int = field(default_factory=lambda: _int("VB_SESSION_IDLE_SEC", 10 * 60))

@@ -33,7 +33,7 @@
       <span class="chev"></span>
       <span class="dot" style:background={fileColor(name)}></span>
     {/if}
-    <span class="name {gitClass(gxy)}">{name}</span>
+    <span class="name {gitClass(gxy)}">{depth === 0 ? name.slice(name.lastIndexOf("/") + 1) : name}</span>
     {#if letter}<span class="git {gitClass(gxy)}">{letter}</span>{/if}
   </button>
   <button class="more" aria-label="File actions" onclick={(e) => { e.stopPropagation(); tree.selected = path; onmenu(path, kind); }}>

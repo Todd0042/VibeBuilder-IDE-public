@@ -2,6 +2,7 @@
   import { editors, type FileTab } from "@state/editors.svelte";
   import { session } from "@state/session.svelte";
   import { formatBytes } from "@state/media";
+  import { downloadFile } from "@state/fileOps";
   import Icon from "./Icon.svelte";
 
   let { tab, active }: { tab: FileTab; active: boolean } = $props();
@@ -62,6 +63,7 @@
   {#if tab.path.toLowerCase().endsWith(".svg")}
     <button class="btn small" onclick={asText}>Source</button>
   {/if}
+  <button class="icon-btn" title="Download" onclick={() => downloadFile(tab.path)}><Icon name="download" size={16} /></button>
   <button class="icon-btn" onclick={() => tab.mediaRev++}><Icon name="refresh" size={16} /></button>
 </div>
 

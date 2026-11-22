@@ -9,7 +9,7 @@
   import { terminals } from "@state/terminals.svelte";
   import { searchRoot } from "@state/searchRoot";
   import { session } from "@state/session.svelte";
-  import { deleteItem as remove, newItem, renameItem as rename } from "@state/fileOps";
+  import { deleteItem as remove, newItem, renameItem as rename, downloadFile } from "@state/fileOps";
 
   let sheet = $state<{ title: string; items: SheetItem[] } | null>(null);
   let wsExpanded = $state(true);
@@ -56,11 +56,14 @@
 
   function openMenu(path: string, kind: string) {
     const dir = kind === "dir" ? path : dirname(path);
-    const isRoot = path === ui.project || !path.includes("/");
+    const isWsRoot = !path;
     sheet = {
       title: path,
       items: [
-        ...(kind === "file" ? [{ label: "Open in Editor", run: () => editors.open(path) }] : []),
+        ...(kind === "file" ? [
+          { label: "Open in Editor", run: () => editors.open(path) },
+          { label: "Download", run: () => downloadFile(path) },
+        ] : []),
         ...(kind === "dir" && ui.workspaceOpen ? [{ label: "Open Folder as Root", run: () => ui.openFolder(path) }] : []),
         { label: "New File…", run: () => newItem("file", dir) },
         { label: "New Folder…", run: () => newItem("dir", dir) },
@@ -68,7 +71,7 @@
         { label: "Search in Folder", run: () => { searchRoot.set(dir); ui.mobileView = "more"; ui.mobileMore = "search"; } },
         { label: "Open Shell Here", run: () => terminals.create("shell", dir) },
         { label: "Copy Path", run: () => navigator.clipboard?.writeText(`/workspace/${path}`) },
-        ...(isRoot ? [] : [
+        ...(isWsRoot ? [] : [
           { sep: true as const },
           { label: "Rename…", run: () => rename(path) },
           { label: "Delete", danger: true, run: () => remove(path) },
@@ -125,6 +128,9 @@
               <span class="chev"><Icon name="chevronRight" size={15} /></span>
               <span class="ficon dim"><Icon name="folder" size={16} /></span>
               <span class="proj-name">{p}</span>
+            </button>
+            <button class="more" aria-label="Project actions" onclick={(e) => { e.stopPropagation(); openMenu(p, "dir"); }}>
+              <Icon name="more" size={16} />
             </button>
           </div>
         {/each}

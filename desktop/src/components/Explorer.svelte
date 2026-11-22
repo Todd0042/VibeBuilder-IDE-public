@@ -9,7 +9,7 @@
   import { terminals } from "../lib/terminals.svelte";
   import { searchRoot } from "../lib/searchRoot";
   import { session } from "../lib/session.svelte";
-  import { deleteItem as remove, newItem, renameItem as rename } from "../lib/fileOps";
+  import { deleteItem as remove, newItem, renameItem as rename, downloadFile } from "../lib/fileOps";
 
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   let wsExpanded = $state(true);
@@ -58,10 +58,13 @@
     e.preventDefault();
     tree.selected = path;
     const dir = kind === "dir" ? path : dirname(path);
-    const isRoot = path === ui.project || !path.includes("/");
+    const isWsRoot = !path;
     menu = {
       x: e.clientX, y: e.clientY, items: [
-        ...(kind === "file" ? [{ label: "Open", run: () => editors.open(path) }] : []),
+        ...(kind === "file" ? [
+          { label: "Open", run: () => editors.open(path) },
+          { label: "Download", run: () => downloadFile(path) },
+        ] : []),
         ...(kind === "dir" && ui.workspaceOpen ? [{ label: "Open Folder as Root", run: () => ui.openFolder(path) }] : []),
         { label: "New File…", run: () => newItem("file", dir) },
         { label: "New Folder…", run: () => newItem("dir", dir) },
@@ -69,8 +72,8 @@
         { label: "Search in Folder", run: () => searchRoot.set(dir) },
         { label: "Open Terminal Here", run: () => terminals.create("shell", dir) },
         { label: "Copy Path", run: () => navigator.clipboard.writeText(`/workspace/${path}`) },
-        { label: "Copy Relative Path", run: () => navigator.clipboard.writeText(path.split("/").slice(1).join("/")) },
-        ...(isRoot ? [] : [{ sep: true as const }, { label: "Rename…", hint: "F2", run: () => rename(path) },
+        { label: "Copy Relative Path", run: () => navigator.clipboard.writeText(ui.project && path.startsWith(ui.project + "/") ? path.slice(ui.project.length + 1) : path.includes("/") ? path.slice(path.indexOf("/") + 1) : path) },
+        ...(isWsRoot ? [] : [{ sep: true as const }, { label: "Rename…", hint: "F2", run: () => rename(path) },
           { label: "Delete", hint: "Del", danger: true, run: () => remove(path) }]),
       ],
     };
@@ -78,7 +81,7 @@
 
   function key(e: KeyboardEvent) {
     const sel = tree.selected;
-    if (!sel || sel === ui.project) return;
+    if (!sel) return;
     if (e.key === "F2") { e.preventDefault(); void rename(sel); }
     if (e.key === "Delete") { e.preventDefault(); void remove(sel); }
   }
@@ -123,7 +126,7 @@
         <TreeNode path={ui.project} name={ui.project} kind="dir" depth={0} onmenu={openMenu} />
       {/if}
       {#each otherProjects as p (p)}
-        <button class="proj-row" onclick={() => ui.openFolder(p)} title="Open {p}">
+        <button class="proj-row" onclick={() => ui.openFolder(p)} oncontextmenu={(e) => openMenu(e, p, "dir")} title="Open {p}">
           <span class="chev"><Icon name="chevronRight" size={13} /></span>
           <span class="ico dir dim"><Icon name="folder" size={15} /></span>
           <span class="proj-name">{p}</span>

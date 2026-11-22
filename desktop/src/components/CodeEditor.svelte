@@ -8,6 +8,8 @@
   import { editors, type FileTab } from "../lib/editors.svelte";
   import { cursor } from "../lib/cursor.svelte";
   import { ui } from "../lib/ui.svelte";
+  import { formatBytes } from "../lib/media";
+  import { downloadFile } from "../lib/fileOps";
   import Icon from "./Icon.svelte";
 
   let { tab, active }: { tab: FileTab; active: boolean } = $props();
@@ -143,7 +145,26 @@
 {#if tab.loading}
   <div class="msg faint">Opening…</div>
 {:else if tab.binary}
-  <div class="msg faint">This is a binary file, so it isn't shown here.</div>
+  <div class="bin-view">
+    <div class="bin-card">
+      <div class="bin-icon"><Icon name="file" size={44} /></div>
+      <div class="bin-name">{tab.title}</div>
+      <div class="bin-meta faint">
+        <span>{tab.path}</span>
+        {#if tab.size !== undefined}<span>•</span><span>{formatBytes(tab.size)}</span>{/if}
+        {#if tab.mtime}<span>•</span><span>{new Date(tab.mtime * 1000).toLocaleString()}</span>{/if}
+      </div>
+      <div class="bin-desc faint">Binary file (not displayed as text)</div>
+      <div class="bin-acts">
+        <button class="btn primary" onclick={() => downloadFile(tab.path)}>
+          <Icon name="download" size={14} /> Download
+        </button>
+        <button class="btn" onclick={() => editors.openAsText(tab.path)}>
+          Open as text anyway
+        </button>
+      </div>
+    </div>
+  </div>
 {:else}
   <div class="cm" bind:this={host}></div>
 {/if}
@@ -158,4 +179,11 @@
   .banner.gone { background: #3a1d22; color: #ffd1d5; }
   .banner.note { background: #18261a; color: #c8ecc4; padding: 4px 12px; font-size: 12px; }
   .grow { flex: 1; }
+  .bin-view { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .bin-card { display: flex; flex-direction: column; align-items: center; text-align: center; max-width: 440px; padding: 32px 24px; background: var(--panel-bg); border: 1px solid var(--line); border-radius: 8px; gap: 10px; }
+  .bin-icon { color: var(--dim); margin-bottom: 4px; }
+  .bin-name { font-size: 16px; font-weight: 600; word-break: break-all; }
+  .bin-meta { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; font-size: 12px; }
+  .bin-desc { font-size: 13px; }
+  .bin-acts { display: flex; gap: 10px; margin-top: 8px; }
 </style>

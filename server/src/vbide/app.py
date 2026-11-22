@@ -41,7 +41,7 @@ def build_services(settings: Settings) -> Services:
         if not settings.read_secret(path):  # said loudly at startup: without it the app can't even show the problem
             logging.getLogger("vbide").error("Missing %s (%s): %s. Fix: vibebuilder install (or restore the file).",
                                              what, path, effect)
-    jail = Jail(settings.workspace)
+    jail = Jail(settings.workspace, allow_internal_symlinks=settings.allow_internal_symlinks)
     hub = LiveHub()
     history = HistoryStore(settings.history_dir, settings.history_cap_bytes)
     agent = AgentLink(settings.agent_url, settings.read_secret(settings.agent_token_file))

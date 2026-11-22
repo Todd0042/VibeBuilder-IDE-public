@@ -48,6 +48,11 @@ class Settings:
     # How client IPs arrive behind a local tunnel/proxy: none | cloudflare | forwarded.
     proxy_mode: str = field(default_factory=_proxy_mode)
 
+    allow_internal_symlinks: bool = field(
+        default_factory=lambda: os.environ.get("VB_ALLOW_INTERNAL_SYMLINKS", "0").strip() == "1")
+    allow_file_download: bool = field(
+        default_factory=lambda: os.environ.get("VB_ALLOW_FILE_DOWNLOAD", "0").strip() == "1")
+
     max_devices: int = field(default_factory=lambda: _int("VB_MAX_DEVICES", 3))
     session_idle_sec: int = field(default_factory=lambda: _int("VB_SESSION_IDLE_SEC", 10 * 60))
     pair_code_ttl_sec: int = field(default_factory=lambda: _int("VB_PAIR_TTL_SEC", 30))
@@ -55,9 +60,9 @@ class Settings:
     lockout_sec: int = field(default_factory=lambda: _int("VB_LOCKOUT_SEC", 15 * 60))
     max_global_failures: int = field(default_factory=lambda: _int("VB_MAX_GLOBAL_FAILURES", 30))
 
-    max_file_bytes: int = field(default_factory=lambda: _int("VB_MAX_FILE_BYTES", 8 * 1024 * 1024))
+    max_file_bytes: int = field(default_factory=lambda: _int("VB_MAX_FILE_BYTES", 32 * 1024 * 1024))
     history_cap_bytes: int = field(default_factory=lambda: _int("VB_HISTORY_CAP_BYTES", 10 * 1024**3))
-    history_max_file_bytes: int = field(default_factory=lambda: _int("VB_HISTORY_MAX_FILE_BYTES", 4 * 1024 * 1024))
+    history_max_file_bytes: int = field(default_factory=lambda: _int("VB_HISTORY_MAX_FILE_BYTES", 16 * 1024 * 1024))
     changeset_quiet_sec: float = field(default_factory=lambda: float(os.environ.get("VB_CHANGESET_QUIET_SEC", "5")))
     file_settle_sec: float = field(default_factory=lambda: float(os.environ.get("VB_FILE_SETTLE_SEC", "2")))
     # Checkpoint commits: how long a project must be quiet first (like auto-save).

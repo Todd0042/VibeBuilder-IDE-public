@@ -16,7 +16,7 @@ project, or delete this file if you don't want them.
 - Add dependencies only when needed, from the official registry, with exact versions in the lock file.
 
 ## 2. Keep the code organized
-- No file over 300 lines. When a file is getting close, split it by responsibility before adding more.
+- No file over 500 lines. When a file is getting close, split it by responsibility before adding more.
 - One clear job per file, module or function. Put new code where code of that kind already lives.
 - Reuse what exists before writing something new: search the project for an existing helper first.
 - Name things for what they do. No dead code, commented-out blocks or placeholder stubs left behind.
@@ -48,10 +48,10 @@ project, or delete this file if you don't want them.
   under that same ID, go to the logs for whoever runs it.
 
 ## 5. Prove it works
-- Run the app, the build and the tests after every change, and read the output. Never say something
-  works without having run it.
-- Add or update tests for the logic you change, especially for bugs (a test that fails first), and
-  test the failure paths too: what the user sees when the network, a file or an input is bad.
+- Run the app and verify changes work end to end after every feature or bugfix. Never say something
+  works without having tested it.
+- Prefer realistic end-to-end (E2E) verification for complex features and before major releases. Do
+  not waste time writing shallow, post-hoc unit tests for trivial code.
 - When something fails, find the root cause. Don't skip or loosen tests to make them pass.
 
 ## 6. Don't guess, don't wreck

@@ -295,4 +295,8 @@ class Recorder:
 
 def project_of(path: str) -> str:
     parts = PurePosixPath(path).parts
-    return parts[0] if parts else ""
+    if not parts:
+        return ""
+    if parts[0].lower() == "github" and len(parts) > 1:
+        return f"{parts[0]}/{parts[1]}"
+    return parts[0]

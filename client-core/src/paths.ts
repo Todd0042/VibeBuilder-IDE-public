@@ -3,8 +3,20 @@
 export const basename = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 export const dirname = (p: string) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
 export const join = (...parts: string[]) => parts.filter(Boolean).join("/").replace(/\/+/g, "/");
-export const projectOf = (p: string) => p.split("/")[0] ?? "";
-export const withinProject = (p: string) => p.split("/").slice(1).join("/");
+export const projectOf = (p: string) => {
+  const parts = p.split("/");
+  if (parts.length > 1 && parts[0].toLowerCase() === "github") {
+    return `${parts[0]}/${parts[1]}`;
+  }
+  return parts[0] ?? "";
+};
+export const withinProject = (p: string) => {
+  const parts = p.split("/");
+  if (parts.length > 1 && parts[0].toLowerCase() === "github") {
+    return parts.slice(2).join("/");
+  }
+  return parts.slice(1).join("/");
+};
 
 export function relativeTime(epochSec: number, now = Date.now() / 1000): string {
   const d = Math.max(0, now - epochSec);

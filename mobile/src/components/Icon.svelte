@@ -35,6 +35,7 @@
     qr: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 14h2v2h-2zM16 16h2v2h-2zM14 18h2v2h-2zM18 18h2v2h-2z",
     back: "M15 6l-6 6 6 6",
     ports: "M8 12h8M4 8v8M20 8v8M12 4v4M12 16v4",
+    download: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3",
   };
 </script>
 

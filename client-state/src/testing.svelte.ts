@@ -9,6 +9,10 @@ import {
 
 const LAST_CMD = "vb.runCmd:"; // per folder
 
+function stored<T>(key: string, fallback: T): T {
+  try { const v = localStorage.getItem(key); return v === null ? fallback : (JSON.parse(v) as T); } catch { return fallback; }
+}
+
 class Testing {
   /** Ports something listens on in the builder. */
   builderPorts = $state<{ port: number; process: string }[]>([]);
@@ -18,11 +22,13 @@ class Testing {
   forwards = $state<Record<number, number>>({});
   adb = $state(false);
   busy = $state(false);
+  autoForward = $state<boolean>(stored("vb.autoForward", true));
   readonly available = canTunnel;
   readonly adbAvailable = canAdb;
   readonly guiAvailable = canGui;
   readonly previewAvailable = canPreview;
   private runs = new Map<string, string>(); // terminal id -> run id (GUI runs)
+  private pendingForward = new Set<number>();
 
   constructor() {
     terminals.onClose((id) => {
@@ -33,6 +39,14 @@ class Testing {
       }
     });
     session.onSignedOut(() => { this.forwards = {}; this.adb = false; this.runs.clear(); });
+    setInterval(() => {
+      if (session.phase === "ready") void this.refresh();
+    }, 4000);
+  }
+
+  toggleAutoForward() {
+    this.autoForward = !this.autoForward;
+    localStorage.setItem("vb.autoForward", JSON.stringify(this.autoForward));
   }
 
   async refresh() {
@@ -44,6 +58,15 @@ class Testing {
     }
     this.forwards = Object.fromEntries(await portForwards());
     this.adb = await adbStatus();
+
+    if (this.autoForward && this.available && this.builderPorts.length) {
+      for (const p of this.builderPorts) {
+        if (!this.forwards[p.port] && !this.pendingForward.has(p.port)) {
+          this.pendingForward.add(p.port);
+          void this.forward(p.port, p.port).finally(() => this.pendingForward.delete(p.port));
+        }
+      }
+    }
   }
 
   async forward(remote: number, local = remote): Promise<void> {

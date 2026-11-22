@@ -42,8 +42,19 @@ fi
 # Builder limits.
 : "${VB_BUILDER_MEMORY:=16g}"
 : "${VB_BUILDER_CPUS:=$(nproc)}"
+# Max file size in bytes that can be opened in the IDE editor (default: 32 MB).
+: "${VB_MAX_FILE_BYTES:=33554432}"
+# Session idle timeout in seconds (default: 600 = 10 min; 86400 = 24h, 0 = no idle timeout).
+: "${VB_SESSION_IDLE_SEC:=600}"
+# Allow internal symlinks beneath /workspace (0 = strict ban, 1 = allow internal symlinks).
+: "${VB_ALLOW_INTERNAL_SYMLINKS:=0}"
+# Allow downloading workspace files and viewing arbitrary binary assets (0 = media only, 1 = allow all).
+: "${VB_ALLOW_FILE_DOWNLOAD:=0}"
+# Allow all files in local checkpoints (1 = do not drop .env or files > 5MB).
+: "${VB_CHECKPOINT_ALLOW_ALL:=0}"
 # Optional: the laptop app's app id (keychain and saved settings are tied to it).
 : "${VB_APP_IDENTIFIER:=}"
 
 export VB_PUBLIC_URL VB_WORKSPACE_DIR VB_STATE_DIR VB_CONTAINER_STORAGE VB_SERVER_PORT VB_PROXY VB_TRUST_CF \
-  VB_TOTP_ISSUER VB_BUILDER_MEMORY VB_BUILDER_CPUS VB_APP_IDENTIFIER
+  VB_TOTP_ISSUER VB_BUILDER_MEMORY VB_BUILDER_CPUS VB_MAX_FILE_BYTES VB_SESSION_IDLE_SEC \
+  VB_ALLOW_INTERNAL_SYMLINKS VB_ALLOW_FILE_DOWNLOAD VB_CHECKPOINT_ALLOW_ALL VB_APP_IDENTIFIER

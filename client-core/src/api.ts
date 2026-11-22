@@ -84,16 +84,18 @@ export class Api {
   projects() { return this.req<{ projects: string[]; hidden: string[] }>("GET", "/api/v1/projects"); }
   /** Hide a folder from the folder list, or show it again. Nothing on disk changes. */
   setHidden(path: string, hidden: boolean) { return this.req<{ hidden: string[] }>("PUT", "/api/v1/folders/hidden", { path, hidden }); }
-  /** A URL an <img>/<video>/<audio> can load one file from (the ticket in it dies with this session). */
-  async mediaUrl(path: string) {
-    const r = await this.req<{ url: string; mime: string; size: number }>("POST", "/api/v1/media/ticket", { path });
+  /** A URL an <img>/<video>/<audio> can load one file from, or to download a workspace file. */
+  async mediaUrl(path: string, download = false) {
+    const r = await this.req<{ url: string; mime: string; size: number }>("POST", "/api/v1/media/ticket", { path, download });
     return { ...r, url: this.server + r.url };
   }
   list(path: string, background = false) {
     // path "" is the workspace itself, so it's always sent (q() drops empty values)
     return this.req<DirListing>("GET", "/api/v1/fs/list?path=" + encodeURIComponent(path), undefined, { background });
   }
-  read(path: string, background = false) { return this.req<FileContent>("GET", "/api/v1/fs/file" + this.q({ path }), undefined, { background }); }
+  read(path: string, background = false, asText = false) {
+    return this.req<FileContent>("GET", "/api/v1/fs/file" + this.q({ path, as_text: asText ? 1 : undefined }), undefined, { background });
+  }
   save(path: string, content: string, baseEtag: string | null, force = false, background = false) {
     return this.req<SaveResult>("PUT", "/api/v1/fs/file", { path, content, base_etag: baseEtag, force }, { background });
   }

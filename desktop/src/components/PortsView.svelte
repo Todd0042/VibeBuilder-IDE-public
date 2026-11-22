@@ -43,7 +43,10 @@
   </section>
 
   <section>
-    <h4>Listening in the builder</h4>
+    <div class="head-row">
+      <h4>Listening in the builder</h4>
+      <label class="auto-toggle"><input type="checkbox" bind:checked={testing.autoForward} onchange={() => testing.toggleAutoForward()} /> Auto-forward dev ports</label>
+    </div>
     {#if testing.portsError}
       <div class="stale">⚠ Out of date: the builder isn't answering ({testing.portsError}). This is the last list it sent.</div>
     {/if}
@@ -82,7 +85,10 @@
 <style>
   .ports { position: absolute; inset: 0; overflow: auto; padding: 10px 16px 20px; display: flex; flex-direction: column; gap: 14px; font-size: 12.5px; }
   section { display: flex; flex-direction: column; gap: 5px; max-width: 760px; }
-  h4 { margin: 0 0 2px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+  h4 { margin: 0; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+  .head-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+  .auto-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--dim); cursor: pointer; user-select: none; }
+  .auto-toggle input { cursor: pointer; margin: 0; }
   .row { display: flex; align-items: center; gap: 9px; padding: 5px 8px; border-radius: 6px; background: #ffffff05; }
   .row.add { background: none; padding: 4px 0; }
   .row.add .field { max-width: 260px; height: 26px; }

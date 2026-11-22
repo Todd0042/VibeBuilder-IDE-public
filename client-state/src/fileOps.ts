@@ -53,12 +53,46 @@ export async function renameItem(path: string) {
 }
 
 export async function deleteItem(path: string) {
-  if (!(await ui.confirm(`Delete ${basename(path)}?`, "It can be brought back from Changes → its change set, if it was recorded in history.", "Delete", true))) return;
+  if (!path) return;
+  const isProj = ui.projects.includes(path) || path === ui.project;
+  const title = isProj ? `Delete project ${basename(path)}?` : `Delete ${basename(path)}?`;
+  const desc = isProj
+    ? "This will delete the entire project folder and all files inside it."
+    : "It can be brought back from Changes → its change set, if it was recorded in history.";
+  if (!(await ui.confirm(title, desc, "Delete", true))) return;
   try {
     await session.api.remove(path);
-    for (const t of [...editors.tabs]) if (t.kind === "file" && (t.path === path || t.path.startsWith(path + "/"))) await editors.close(t.id, false);
+    for (const t of [...editors.tabs]) {
+      if (t.kind === "file" && (t.path === path || t.path.startsWith(path + "/"))) {
+        await editors.close(t.id, false);
+      }
+    }
+    if (ui.project === path || ui.project.startsWith(path + "/")) {
+      ui.openFolder("");
+    }
+    try {
+      const r = await session.api.projects();
+      ui.projects = r.projects;
+      ui.hiddenFolders = r.hidden ?? [];
+    } catch {
+      // keep existing projects if reload fails
+    }
     await tree.load(dirname(path));
   } catch (e) {
     ui.error(e);
+  }
+}
+
+export async function downloadFile(path: string) {
+  try {
+    const { url } = await session.api.mediaUrl(path, true);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = basename(path);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } catch (e) {
+    ui.error(e, `Couldn't download ${basename(path)}`);
   }
 }

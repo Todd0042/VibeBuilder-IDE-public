@@ -171,7 +171,7 @@ def test_starter_agent_rules(stack):
     r = c.post("/api/v1/agent-rules", json={"project": "fresh"}).json()
     assert r["created"] == ["fresh/AGENTS.md", "fresh/CLAUDE.md"]
     rules = (ws / "fresh" / "AGENTS.md").read_text()
-    assert "No file over 300 lines" in rules and "Never put secrets" in rules and "Commit at the end" in rules
+    assert "No file over 500 lines" in rules and "Never put secrets" in rules and "Commit at the end" in rules
     assert "Every error must be visible, with full details, to whoever runs the software" in rules
     assert "Secrets never appear in any error" in rules and "reference ID" in rules
     assert "@AGENTS.md" in (ws / "fresh" / "CLAUDE.md").read_text()

@@ -29,6 +29,7 @@ agy=()
 
 podman create --name "$NAME" --hostname vibebuilder --network vibebuilder \
   --userns=keep-id:uid=1000,gid=1000 \
+  --env VB_CHECKPOINT_ALLOW_ALL="$VB_CHECKPOINT_ALLOW_ALL" \
   --memory="$VB_BUILDER_MEMORY" --cpus="$VB_BUILDER_CPUS" --pids-limit=8192 --shm-size=2g \
   --volume "$VB_WORKSPACE_DIR:/workspace" \
   --volume "$STORE/builder-home:/home/coder" \

@@ -49,7 +49,21 @@ def _jail_call(fn, *args):
 async def projects(_: SessionDep, request: Request) -> dict:
     svc = services(request)
     entries = await run_in_threadpool(_jail_call, svc.jail.list_dir, "")
-    names = sorted((e.name for e in entries if e.kind == "dir" and not e.name.startswith(".")), key=str.lower)
+    names: list[str] = []
+    for e in entries:
+        if e.kind != "dir" or e.name.startswith("."):
+            continue
+        if e.name.lower() == "github":
+            try:
+                gh_entries = await run_in_threadpool(_jail_call, svc.jail.list_dir, e.name)
+                for sub in gh_entries:
+                    if sub.kind == "dir" and not sub.name.startswith("."):
+                        names.append(f"{e.name}/{sub.name}")
+            except Exception:
+                pass
+        else:
+            names.append(e.name)
+    names.sort(key=str.lower)
     return {"projects": names, "hidden": sorted(_hidden(svc.settings.folders_file), key=str.lower)}
 
 
@@ -105,11 +119,13 @@ async def list_dir(path: str, _: SessionDep, request: Request) -> dict:
 
 
 @router.get("/fs/file")
-async def read_file(path: str, _: SessionDep, request: Request) -> dict:
+async def read_file(path: str, _: SessionDep, request: Request, as_text: bool = False) -> dict:
     svc = services(request)
     rel = _jail_call(clean_rel, path)
     data, s = await run_in_threadpool(_jail_call, svc.jail.read_file, rel, svc.settings.max_file_bytes)
     text = decode_text(data)
+    if text is None and as_text:
+        text = data.decode("utf-8", errors="replace")
     return {"path": rel, "etag": etag_of(data), "size": len(data), "mtime": s.st_mtime,
             "binary": text is None, "content": text if text is not None else ""}
 
@@ -181,7 +197,7 @@ class DeleteBody(BaseModel):
 async def delete(body: DeleteBody, _: SessionDep, request: Request) -> dict:
     svc = services(request)
     rel = _jail_call(clean_rel, body.path)
-    if "/" not in rel:
-        raise HTTPException(400, "Whole projects can't be deleted from the IDE")
+    if not rel:
+        raise HTTPException(400, "The workspace root itself cannot be deleted")
     await run_in_threadpool(_jail_call, svc.jail.delete, rel)
     return {"path": rel}

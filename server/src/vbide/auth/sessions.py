@@ -47,7 +47,7 @@ class SessionStore:
             return None
         with self._lock:
             s = self._by_key.get(self._key(token))
-        if s and time.time() - s.last_activity > self.idle_sec:
+        if s and self.idle_sec > 0 and time.time() - s.last_activity > self.idle_sec:
             self.end(s.key)
             return None
         return s
@@ -93,6 +93,8 @@ class SessionStore:
             return {s.device_id for s in self._by_key.values()}
 
     def sweep(self) -> None:
+        if self.idle_sec <= 0:
+            return
         now = time.time()
         with self._lock:
             stale = [k for k, s in self._by_key.items() if now - s.last_activity > self.idle_sec]

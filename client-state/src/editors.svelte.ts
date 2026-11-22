@@ -24,6 +24,8 @@ export interface FileTab {
   etag: string | null;
   initial: string;
   binary: boolean;
+  size?: number;
+  mtime?: number;
   dirty: boolean;
   loading: boolean;
   pinned: boolean;
@@ -69,6 +71,17 @@ class Editors {
   async open(path: string, goTo?: { line: number; col?: number; length?: number }, asText = false) {
     const existing = this.file(path);
     if (existing) {
+      if (asText && existing.binary) {
+        existing.loading = true;
+        existing.media = null;
+        try {
+          const f = await session.api.read(path, false, true);
+          Object.assign(existing, { etag: f.etag, initial: f.content, binary: false, size: f.size, mtime: f.mtime, loading: false });
+        } catch (e) {
+          existing.loading = false;
+          ui.error(e, `Couldn't open ${basename(path)} as text`);
+        }
+      }
       this.activeId = existing.id;
       ui.mobileView = "editor";
       if (goTo) existing.handle ? existing.handle.goTo(goTo.line, goTo.col, goTo.length) : (existing.pendingGoTo = goTo);
@@ -89,14 +102,28 @@ class Editors {
       return;
     }
     try {
-      const f = await session.api.read(path);
+      const f = await session.api.read(path, false, asText);
       const t = this.file(path);
       if (!t) return;
-      Object.assign(t, { etag: f.etag, initial: f.content, binary: f.binary, loading: false });
+      Object.assign(t, { etag: f.etag, initial: f.content, binary: f.binary, size: f.size, mtime: f.mtime, loading: false });
     } catch (e) {
       this.tabs = this.tabs.filter((t) => t.id !== path);
       if (this.activeId === path) this.activeId = this.tabs.at(-1)?.id ?? null;
       ui.error(e, `Couldn't open ${basename(path)}`);
+    }
+  }
+
+  async openAsText(path: string) {
+    const t = this.file(path);
+    if (!t) return;
+    t.loading = true;
+    t.media = null;
+    try {
+      const f = await session.api.read(path, false, true);
+      Object.assign(t, { etag: f.etag, initial: f.content, binary: false, size: f.size, mtime: f.mtime, loading: false });
+    } catch (e) {
+      t.loading = false;
+      ui.error(e, `Couldn't open ${basename(path)} as text`);
     }
   }
 

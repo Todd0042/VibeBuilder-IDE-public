@@ -118,6 +118,9 @@ def _checkpoint(root: Path, who: list[str]) -> dict:
 
 def _drop_unsafe(root: Path, head: str | None, env: dict) -> list[dict]:
     """Take secrets and oversized new files back out of the checkpoint's index."""
+    if os.environ.get("VB_CHECKPOINT_ALLOW_ALL", "").strip() == "1":
+        return []
+    max_new_file = int(os.environ.get("VB_CHECKPOINT_MAX_BYTES", 5 * 1024 * 1024))
     changed = _git(root, "diff", "--cached", "--name-only", "--no-renames", "--diff-filter=AM", "-z",
                    head or _empty_tree(root), env=env).split("\0")
     left_out = []
@@ -131,8 +134,8 @@ def _drop_unsafe(root: Path, head: str | None, env: dict) -> list[dict]:
                 if f.is_file() and not f.is_symlink():
                     size = f.stat().st_size
                     tracked = head and _git(root, "cat-file", "-e", f"{head}:{path}", check=False, rc=True) == 0
-                    if size > MAX_NEW_FILE and not tracked:
-                        reason = "new file over 5 MB"
+                    if size > max_new_file and not tracked:
+                        reason = f"new file over {max_new_file // (1024 * 1024)} MB"
                     elif size <= 2 * 1024 * 1024 and SECRET_TEXT.search(f.read_bytes()):
                         reason = "contains something that looks like a secret"
             except OSError:

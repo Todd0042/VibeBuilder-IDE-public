@@ -40,7 +40,10 @@ _STATUSES = ("committed", "unchanged", "skipped", "failed")
 
 
 def project_of(path: str) -> str:
-    return path.split("/", 1)[0]
+    parts = path.split("/")
+    if parts and parts[0].lower() == "github" and len(parts) > 1:
+        return f"{parts[0]}/{parts[1]}"
+    return parts[0] if parts else ""
 
 
 class Checkpointer:

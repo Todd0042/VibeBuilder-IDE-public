@@ -67,14 +67,21 @@ class Entry:
 
 
 class Jail:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, allow_internal_symlinks: bool = False):
         self.root = Path(root)
+        self.allow_internal_symlinks = allow_internal_symlinks
         self._root_fd = os.open(self.root, os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC)
 
     # ---- low level -------------------------------------------------------------------------
     def open(self, rel: str, flags: int, mode: int = 0) -> int:
         rel = clean_rel(rel) or "."
-        how = _OpenHow(flags | os.O_CLOEXEC | os.O_NOFOLLOW, mode, _RESOLVE)
+        if self.allow_internal_symlinks:
+            resolve = _RESOLVE_BENEATH | _RESOLVE_NO_MAGICLINKS | _RESOLVE_NO_XDEV
+            open_flags = flags | os.O_CLOEXEC
+        else:
+            resolve = _RESOLVE
+            open_flags = flags | os.O_CLOEXEC | os.O_NOFOLLOW
+        how = _OpenHow(open_flags, mode, resolve)
         fd = _libc.syscall(ctypes.c_long(_SYS_OPENAT2), ctypes.c_long(self._root_fd), ctypes.c_char_p(rel.encode()),
                            ctypes.byref(how), ctypes.c_size_t(ctypes.sizeof(how)))
         if fd < 0:

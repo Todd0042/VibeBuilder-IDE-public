@@ -60,7 +60,7 @@ class UiState {
   /** What the folder dropdown and File menu list: recent nested folders, then the projects, minus hidden ones. */
   get folderChoices(): string[] {
     const hidden = new Set(this.hiddenFolders);
-    const nested = this.recentFolders.filter((p) => p.includes("/") && !hidden.has(p));
+    const nested = this.recentFolders.filter((p) => !this.projects.includes(p) && p.includes("/") && !hidden.has(p));
     return [...nested, ...this.projects.filter((p) => !nested.includes(p) && !hidden.has(p))];
   }
 

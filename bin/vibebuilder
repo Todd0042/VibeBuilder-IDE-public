@@ -39,7 +39,7 @@ need_config() {
 render_units() {
   local t c
   t="$(<"$REPO/deploy/quadlet/vb-server.container.in")"
-  for k in VB_PUBLIC_URL VB_WORKSPACE_DIR VB_STATE_DIR VB_SERVER_PORT VB_PROXY VB_TOTP_ISSUER; do
+  for k in VB_PUBLIC_URL VB_WORKSPACE_DIR VB_STATE_DIR VB_SERVER_PORT VB_PROXY VB_TOTP_ISSUER VB_MAX_FILE_BYTES VB_SESSION_IDLE_SEC VB_ALLOW_INTERNAL_SYMLINKS VB_ALLOW_FILE_DOWNLOAD; do
     t="${t//@$k@/${!k}}"
   done
   mkdir -p "$QUADLET_DIR"

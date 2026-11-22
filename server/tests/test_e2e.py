@@ -41,7 +41,7 @@ def _fresh_code(totp, used):
 
 
 def test_full_session(stack):
-    url, used_steps = stack["url"], stack.setdefault("used_steps", set())
+    url, used_steps, ws = stack["url"], stack.setdefault("used_steps", set()), stack["ws"]
     c = httpx.Client(base_url=url, timeout=15, headers={"cf-connecting-ip": "203.0.113.7"})
 
     # Nothing is served before sign-in.
@@ -66,6 +66,16 @@ def test_full_session(stack):
     c.headers["authorization"] = f"Bearer {session}"
 
     assert c.get("/api/v1/projects").json()["projects"] == ["proj"]
+    # GitHub folder treated as alternate workspace
+    (ws / "GitHub" / "repo1" / "src").mkdir(parents=True)
+    (ws / "GitHub" / ".git").mkdir(parents=True)
+    assert c.get("/api/v1/projects").json()["projects"] == ["GitHub/repo1", "proj"]
+    # Project deletion allowed from IDE
+    assert c.post("/api/v1/fs/delete", json={"path": "GitHub/repo1"}).status_code == 200
+    assert not (ws / "GitHub" / "repo1").exists()
+    assert c.post("/api/v1/fs/delete", json={"path": ""}).status_code == 400
+    import shutil
+    shutil.rmtree(ws / "GitHub")
     names = {e["name"]: e["kind"] for e in c.get("/api/v1/fs/list", params={"path": "proj"}).json()["entries"]}
     assert names["src"] == "dir" and names["leak.txt"] == "symlink"
 
@@ -76,6 +86,14 @@ def test_full_session(stack):
         assert r.status_code in (403, 404), (bad, r.status_code, r.text)
         assert "outside the workspace" not in r.text
     assert c.put("/api/v1/fs/file", json={"path": "proj/datalink/x", "content": "x", "base_etag": None}).status_code in (403, 404)
+
+    # Binary file detection and as_text fallback
+    (ws / "proj" / "binary.bin").write_bytes(b"\x00\x01\x02\x03\xff\xfe")
+    fb = c.get("/api/v1/fs/file", params={"path": "proj/binary.bin"}).json()
+    assert fb["binary"] is True and fb["content"] == ""
+    fb_text = c.get("/api/v1/fs/file", params={"path": "proj/binary.bin", "as_text": "1"}).json()
+    assert fb_text["binary"] is False and len(fb_text["content"]) > 0
+    (ws / "proj" / "binary.bin").unlink()
 
     # Open, save, conflict.
     f = c.get("/api/v1/fs/file", params={"path": "proj/src/app.py"}).json()
@@ -341,7 +359,7 @@ def test_media_and_hidden_folders(stack):
     clip = bytes(range(256)) * 40  # 10 240 bytes standing in for a video
     (ws / "proj" / "clip.mp4").write_bytes(clip)
 
-    # Only media files get a ticket, and only from inside the workspace.
+    # Only media files get a ticket without download flag, and only from inside the workspace.
     assert c.post("/api/v1/media/ticket", json={"path": "proj/README.md"}).status_code == 415
     assert c.post("/api/v1/media/ticket", json={"path": "proj/nope.mp4"}).status_code == 404
     assert c.post("/api/v1/media/ticket", json={"path": "../secret.mp4"}).status_code in (400, 403, 404)
@@ -350,7 +368,14 @@ def test_media_and_hidden_folders(stack):
     t = r.json()
     assert t["mime"] == "video/mp4" and t["size"] == len(clip)
 
+    # Download ticket allows downloading non-media files
+    r_dl = c.post("/api/v1/media/ticket", json={"path": "proj/README.md", "download": True})
+    assert r_dl.status_code == 200
+    assert "dl=1" in r_dl.json()["url"]
+
     anon = httpx.Client(base_url=stack["url"], timeout=10)  # the URL alone is enough: no Authorization header
+    dl_resp = anon.get(r_dl.json()["url"])
+    assert dl_resp.status_code == 200 and "attachment" in dl_resp.headers.get("content-disposition", "")
     full = anon.get(t["url"])
     assert full.status_code == 200 and full.content == clip and full.headers["accept-ranges"] == "bytes"
     assert "sandbox" in full.headers["content-security-policy"]

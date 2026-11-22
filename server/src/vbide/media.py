@@ -54,6 +54,7 @@ class Ticket:
     session_key: str
     path: str
     expires: float
+    download: bool = False
 
 
 _tickets: dict[str, Ticket] = {}
@@ -66,6 +67,7 @@ def mime_of(path: str) -> str | None:
 
 class TicketBody(BaseModel):
     path: str = Field(max_length=4096)
+    download: bool = False
 
 
 @router.post("/ticket")
@@ -74,7 +76,7 @@ async def ticket(body: TicketBody, s: SessionDep, request: Request) -> dict:
     try:
         rel = clean_rel(body.path)
         mime = mime_of(rel)
-        if not mime:
+        if not mime and not body.download and not svc.settings.allow_file_download:
             raise HTTPException(415, "Not a media file the viewer can show")
         info = await run_in_threadpool(svc.jail.stat, rel)
     except JailError as exc:
@@ -88,8 +90,9 @@ async def ticket(body: TicketBody, s: SessionDep, request: Request) -> dict:
             del _tickets[k]
         if len(_tickets) >= MAX_TICKETS:
             raise HTTPException(429, "Too many media files open; close some tabs")
-        _tickets[t] = Ticket(s.key, rel, now + TICKET_TTL_SEC)
-    return {"url": f"/api/v1/media/raw?t={t}", "mime": mime, "size": info.st_size}
+        _tickets[t] = Ticket(s.key, rel, now + TICKET_TTL_SEC, body.download)
+    dl = "&dl=1" if body.download else ""
+    return {"url": f"/api/v1/media/raw?t={t}{dl}", "mime": mime or "application/octet-stream", "size": info.st_size}
 
 
 _RANGE = re.compile(r"^bytes=(\d*)-(\d*)$")
@@ -166,11 +169,14 @@ async def raw(t: str, request: Request):
         finally:
             close()
 
+    force_dl = tk.download or request.query_params.get("dl") == "1"
+    safe_name = posixpath.basename(tk.path).replace('"', '')
+    disposition = f'attachment; filename="{safe_name}"' if force_dl else "inline"
     headers = {
         "Accept-Ranges": "bytes", "Content-Length": str(length),
         # Shown as media only, never as a page on the server's origin (an SVG's scripts can't run).
         "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
-        "Content-Disposition": "inline",
+        "Content-Disposition": disposition,
     }
     if rng:
         headers["Content-Range"] = f"bytes {start}-{end}/{size}"

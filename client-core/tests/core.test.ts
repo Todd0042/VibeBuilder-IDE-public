@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { parsePairingQr } from "../src/qr.ts";
 import { fuzzyFilter } from "../src/fuzzy.ts";
 import { diffLines } from "../src/diff.ts";
-import { basename, dirname, join } from "../src/paths.ts";
+import { basename, dirname, join, projectOf, withinProject } from "../src/paths.ts";
 
 test("parsePairingQr parses valid VibeBuilder QR JSON", () => {
   const got = parsePairingQr('{"vb":1,"u":"https://ide.example.com","c":"ab12cd"}');
@@ -33,4 +33,8 @@ test("path helpers normalize workspace paths", () => {
   assert.equal(join("proj", "src/", "/app.ts"), "proj/src/app.ts");
   assert.equal(dirname("proj/src/app.ts"), "proj/src");
   assert.equal(basename("proj/src/app.ts"), "app.ts");
+  assert.equal(projectOf("proj/src/app.ts"), "proj");
+  assert.equal(projectOf("GitHub/my-repo/src/app.ts"), "GitHub/my-repo");
+  assert.equal(withinProject("proj/src/app.ts"), "src/app.ts");
+  assert.equal(withinProject("GitHub/my-repo/src/app.ts"), "src/app.ts");
 });

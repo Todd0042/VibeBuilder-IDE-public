@@ -3,6 +3,7 @@
   import { ui } from "../lib/ui.svelte";
 
   let value = $state("");
+  let checks = $state<Record<string, boolean>>({});
   let input: HTMLInputElement | undefined = $state();
   let box: HTMLDivElement | undefined = $state();
 
@@ -10,6 +11,7 @@
     const d = ui.dialog;
     if (!d) return;
     value = d.input ?? "";
+    checks = Object.fromEntries((d.checks ?? []).map((c) => [c.id, c.checked]));
     void tick().then(() => {
       if (input) {
         input.focus();
@@ -20,13 +22,13 @@
   });
 
   function done(button: string) {
-    ui.dialog?.resolve({ button, input: value });
+    ui.dialog?.resolve({ button, input: value, checks: { ...checks } });
   }
 
   function key(e: KeyboardEvent) {
     if (!ui.dialog) return;
     if (e.key === "Escape") { e.preventDefault(); done("cancel"); }
-    if (e.key === "Enter" && input) {
+    if (e.key === "Enter" && (input || (ui.dialog.checks?.length && !(e.target instanceof HTMLButtonElement)))) {
       e.preventDefault();
       done(ui.dialog.buttons.find((b) => b.primary)?.value ?? "ok");
     }
@@ -43,6 +45,16 @@
       {#if ui.dialog.input !== undefined}
         <input class="field" bind:this={input} bind:value placeholder={ui.dialog.placeholder ?? ""} spellcheck="false" />
       {/if}
+      {#if ui.dialog.checks?.length}
+        <div class="checks">
+          {#each ui.dialog.checks as c (c.id)}
+            <label class="chk">
+              <input type="checkbox" bind:checked={checks[c.id]} />
+              <span>{c.label}</span>
+            </label>
+          {/each}
+        </div>
+      {/if}
       <div class="buttons">
         {#each ui.dialog.buttons as b}
           <button class="btn" class:primary={b.primary} class:danger={b.danger} onclick={() => done(b.value)}>{b.label}</button>
@@ -57,5 +69,8 @@
   .dialog { width: 440px; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 10px; padding: 18px; box-shadow: 0 20px 60px #000a; display: flex; flex-direction: column; gap: 12px; }
   h3 { margin: 0; font-size: 14px; }
   p { margin: 0; color: var(--dim); }
+  .checks { display: flex; flex-direction: column; gap: 8px; }
+  .chk { display: flex; align-items: center; gap: 9px; cursor: pointer; user-select: none; color: var(--text); }
+  .chk input { width: 15px; height: 15px; accent-color: var(--accent-2); }
   .buttons { display: flex; justify-content: flex-end; gap: 8px; }
 </style>

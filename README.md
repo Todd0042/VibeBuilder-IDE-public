@@ -11,12 +11,13 @@
 [![Version](https://img.shields.io/github/v/release/Todd0042/VibeBuilder-IDE-public?label=Version&color=ff8a3d)](https://github.com/Todd0042/VibeBuilder-IDE-public/releases)
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-00f0ff.svg)](LICENSE)
 [![Platform: Linux](https://img.shields.io/badge/Platform-Linux%20(AppImage)-orange.svg)](https://github.com/Todd0042/VibeBuilder-IDE-public/releases)
+[![Platform: Android](https://img.shields.io/badge/Platform-Android%20(APK)-green.svg)](https://github.com/Todd0042/VibeBuilder-IDE-public/releases)
 [![App: Tauri 2 + Svelte 5](https://img.shields.io/badge/App-Tauri%202%20%2B%20Svelte%205-8a6cff.svg)]()
 [![Server: FastAPI + WebSockets](https://img.shields.io/badge/Server-FastAPI%20%2B%20WebSockets-teal.svg)]()
 [![Containers: Rootless Podman](https://img.shields.io/badge/Containers-Rootless%20Podman-892ca0.svg)]()
 [![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Creator-F16061?style=flat&logo=ko-fi&logoColor=white)](https://ko-fi.com/todd0042)
 
-> **Code on your desktop's horsepower from any laptop: a fast, no-frills IDE whose files, terminals and AI agents (Claude Code, agy) live in a locked-down container at home, with an agent-change timeline that shows exactly what the AI touched, and app testing that streams each window of the app you're building straight to your laptop.**
+> **Code on your desktop's horsepower from any laptop or Android device: a fast, no-frills IDE whose files, terminals and AI agents (Claude Code, agy) live in a locked-down container at home, with an agent-change timeline that shows exactly what the AI touched, and app testing that streams each window of the app you're building straight to your laptop.**
 
 <p align="center">
   <img src="screenshots/main-window.png" alt="VibeBuilder IDE main window" width="100%">
@@ -33,7 +34,7 @@
   * [✨ Highlights at a Glance](#-highlights-at-a-glance)
   * [🚀 Quick Download & Installation](#-quick-download--installation)
 * **Part 2 — Technical Documentation & Architecture Reference**
-  * [1. System Architecture ([server/](server/), [builder/](builder/), [desktop/](desktop/))](#1-system-architecture)
+  * [1. System Architecture ([server/](server/), [builder/](builder/), [desktop/](desktop/), [mobile/](mobile/))](#1-system-architecture)
   * [2. Authentication & Security Model ([server/src/vbide/auth/](server/src/vbide/auth/), [server/src/vbide/jail.py](server/src/vbide/jail.py))](#2-authentication--security-model)
   * [3. Agent-Change Timeline & History Store ([server/src/vbide/history/](server/src/vbide/history/))](#3-agent-change-timeline--history-store)
   * [4. Terminals & AI Agents ([builder/agent/](builder/agent/))](#4-terminals--ai-agents)
@@ -49,19 +50,21 @@
 
 ## 🧠 What Is VibeBuilder IDE?
 
-**VibeBuilder IDE** is a self-hosted remote IDE for people who code with AI agents. Your desktop (the one with the big CPU, the GPU and all your toolchains) does the work; your laptop just needs the small app.
+**VibeBuilder IDE** is a self-hosted remote IDE for people who code with AI agents. Your desktop (the one with the big CPU, the GPU and all your toolchains) does the work; your laptop or Android phone/tablet just needs the client app.
 
 It splits into three pieces:
 1. **🖥️ The Server (`vb-server`)**: A hardened container that holds the sign-in, your files' change history and the only door to the internet. It never runs anything from your workspace.
 2. **🧰 The Builder (`vb-builder`)**: An Arch Linux container with every common language and toolchain preinstalled. Claude Code, agy and your shells run here as `coder` with passwordless `sudo`, so agents can `pacman -S` whatever they need without touching your real system.
-3. **💻 The Laptop App**: A VSCode-style workbench without the frills: folder tree, tabs, editor, find and folder search, diffs, and terminals at the bottom.
+3. **💻 The Client Apps (Laptop & Android)**:
+   * **Linux Laptop**: A fast, distraction-free desktop workbench: folder tree, tabs, editor, find and folder search, diffs, and terminals at the bottom.
+   * **Android Phone & Tablet**: A full mobile client tailored for touch: mobile drawer explorer, symbol/touch bar for CodeMirror, xterm.js terminal with shell & agent quick keys, camera QR pairing, background tunnel service, and on-the-go review of agent change sets.
 
 ---
 
 ## 🔁 How It Works in 3 Steps
 
 1. **Set Up the Desktop**: Copy `vibebuilder.env.example` to `vibebuilder.env`, then `vibebuilder install`, `build` and `start`. Put a Cloudflare Tunnel (or any HTTPS reverse proxy) in front of it.
-2. **Pair Your Laptop**: Open the app, enter your server's address, run `vibebuilder pair` on the desktop and type the 6-character code (it lasts 30 seconds). Then sign in with your authenticator app's 6-digit code.
+2. **Pair Your Laptop or Phone**: Open the app, enter your server's address (or point your phone's camera at the pairing QR code from `vibebuilder pair`), and confirm the 30-second one-time code. Then sign in with your authenticator app's 6-digit code.
 3. **Code & Review**: Open a project, start a Claude or agy terminal, and watch the **Changes** timeline fill up with exactly what the agent changed, file by file, ready to review, restore or undo.
 
 ---
@@ -89,6 +92,23 @@ It splits into three pieces:
   <img src="screenshots/devices-and-shortcuts-list.png" alt="Paired devices, session, change history and keyboard shortcuts" width="30%">
 </p>
 
+### 📱 Android Client
+<p align="center">
+  <img src="screenshots/mobile-explorer.png" alt="Android Explorer with pinned Workspace root" width="32%">
+  <img src="screenshots/mobile-editor.png" alt="Android CodeMirror editor with symbol bar" width="32%">
+  <img src="screenshots/mobile-changes.png" alt="Android agent-change timeline diff view" width="32%">
+</p>
+<p align="center">
+  <img src="screenshots/mobile-terminal-launch.png" alt="Android Terminal launcher" width="32%">
+  <img src="screenshots/mobile-agent-options.png" alt="Agent launch options dialog (Skip Permissions & Remote Control)" width="32%">
+  <img src="screenshots/mobile-tools.png" alt="Android Tools & Settings sheet" width="32%">
+</p>
+<p align="center">
+  <img src="screenshots/mobile-terminal-shell.png" alt="Android fish shell with quick keys above soft keyboard" width="32%">
+  <img src="screenshots/mobile-terminal-agy.png" alt="Antigravity CLI (agy) running in Android terminal" width="32%">
+  <img src="screenshots/mobile-terminal-claude.png" alt="Claude Code running in Android terminal" width="32%">
+</p>
+
 ---
 
 ## ✨ Highlights at a Glance
@@ -98,12 +118,13 @@ It splits into three pieces:
 * **📜 Starter Agent Rules**: A project without agent rules gets an `AGENTS.md` the first time you open it (read by agy directly, and by Claude Code through a one-line `CLAUDE.md`). It covers security first, a 300-line file limit, committing after every session, no silent errors (every failure shown in full to whoever runs the code, secrets masked, and only a plain message plus reference ID for site visitors), proving changes work, and not guessing or wrecking things. Edit it, or delete it: it never comes back.
 * **💾 Auto-Save That Stays Out of the Way**: Each changed file saves itself 3 minutes after its last change (a new change restarts the timer), plus a big orange **Save All** button (`Ctrl+Alt+S`). If an agent edits a file you have unsaved changes in, you choose: Keep mine, Take theirs or Compare.
 * **🖥️ Terminals That Keep Running**: Claude, agy and shell terminals live in the builder and keep working while the app is closed. Reopening replays the scrollback.
+* **📱 Native Android Client**: Supervise agents and code from your phone or tablet on the go. Built with Tauri 2 + Svelte 5 sharing state with the desktop workbench. Features an on-screen CodeMirror symbol bar (`{`, `}`, `=>`, `;`, `Tab`), quick touch keys above the soft keyboard in xterm.js (`Esc`, `Ctrl+C`, `|`, `~`, arrow keys), a camera QR pairing scanner, agent launch flags dialog (Skip Permissions, Remote Control), and a persistent Android foreground service (`TunnelForegroundService`) so port forwarding and connections stay alive in the background.
 * **▶️ Per-App Window Streaming**: **Run App** (`F5`) starts your app in the builder, and its windows, dialogs and popups open on your laptop as normal windows you can move and resize (Wayland apps: Qt, GTK/Tauri, SDL, raylib, GLFW). No full-desktop streaming.
 * **🌐 Port Forwarding & Phone Testing**: Forward any dev server in the builder to `localhost` on the laptop with one click. A phone plugged into the laptop shows up in the builder's `adb devices`, so `./gradlew installDebug` just works.
-* **🔐 Sign-In Before Anything**: Nothing but the sign-in screen answers until you're signed in: no file, no terminal, no health page. A paired device (at most 3) plus the current authenticator code, asked when the app opens.
+* **🔐 Sign-In Before Anything**: Nothing but the sign-in screen answers until you're signed in: no file, no terminal, no health page. A paired device (at most 3; tokens stored in your desktop keychain or Android encrypted storage) plus the current authenticator code, asked when the app opens.
 * **🕰️ Rolling 10 GB History**: Every version of every changed file is kept, compressed. When it hits the cap, the files unchanged the longest lose their history first.
 * **📦 Rebuilds Never Lose Your Tools**: Anything installed with pacman inside the builder is recorded and reinstalled automatically when the image is rebuilt.
-* **⌨️ Familiar Keys**: `Ctrl+P` go to file, `Ctrl+F` / `Ctrl+H` find and replace, `Ctrl+Shift+F` folder search (ripgrep), `Ctrl+G` go to line, `` Ctrl+` `` terminal panel, `Ctrl+Alt+O` open folder, plus File / Edit / View / Go / Terminal / Help menus.
+* **⌨️ Familiar Keys & Touch Shortcuts**: `Ctrl+P` go to file, `Ctrl+F` / `Ctrl+H` find and replace, `Ctrl+Shift+F` folder search (ripgrep), `Ctrl+G` go to line, `` Ctrl+` `` terminal panel, `Ctrl+Alt+O` open folder, plus touch-optimized action sheets and symbol bars on mobile.
 
 ---
 
@@ -140,6 +161,13 @@ chmod +x VibeBuilder-IDE_*_amd64.AppImage
 ```
 It runs on Ubuntu 22.04 or newer and other distros from 2022 on (Debian 12+, Fedora, Mint, Pop!_OS, Arch...). Enter your server's address, then on the desktop run `bin/vibebuilder pair` and type the code. The app keeps its device token in your keychain (KWallet or GNOME Keyring). For app testing, also install `waypipe` and `android-tools`.
 
+### 📱 Android App: APK
+Download the latest `VibeBuilder-IDE_<version>_android.apk` (or architecture-specific APK) and `SHA256SUMS` from [GitHub Releases](https://github.com/Todd0042/VibeBuilder-IDE-public/releases):
+```bash
+sha256sum -c SHA256SUMS   # optional: check the download
+```
+Install the APK on your Android device (Android 8.0+, ARM64 or x86_64). Enter your server's address (or tap the camera button on the pairing screen to scan the `vibebuilder pair` QR code right off your desktop monitor), confirm the 6-character code, and sign in with your authenticator app's 6-digit TOTP code. The device token is stored in Android encrypted storage.
+
 ### 🛠️ Run the Laptop App from Source
 ```bash
 git clone https://github.com/Todd0042/VibeBuilder-IDE-public.git
@@ -149,6 +177,16 @@ bin/vb-app build      # or build your own AppImage (needs only Podman)
 ```
 `bin/vb-app build` builds inside an Ubuntu 22.04 container ([deploy/appimage/Containerfile](deploy/appimage/Containerfile)), so the AppImage works on older distros too, not just on the one you built it on.
 `bin/vb-app` also installs a "VibeBuilder IDE" launcher and icon, since Wayland takes a window's icon from its `.desktop` entry. If the clone has a `vibebuilder.env`, its `VB_PUBLIC_URL` becomes the app's default server.
+
+### 📱 Build & Run the Android App from Source
+```bash
+git clone https://github.com/Todd0042/VibeBuilder-IDE-public.git
+cd VibeBuilder-IDE-public
+bin/vb-android --check   # verify Android SDK/NDK, Java 17, Rust targets, and Node
+bin/vb-android dev       # run live on a connected phone or emulator in dev mode
+bin/vb-android build     # build release APKs and AABs
+```
+`bin/vb-android` automatically detects `ANDROID_HOME`, `NDK_HOME`, `JAVA_HOME`, and configures the build using your `VB_PUBLIC_URL`.
 
 ---
 ---
@@ -161,14 +199,17 @@ bin/vb-app build      # or build your own AppImage (needs only Podman)
 
 ## 1. System Architecture
 
-The laptop app talks HTTPS and WebSockets to the server, and only the server talks to the builder, over a private Podman network.
+The client apps (laptop and Android) talk HTTPS and WebSockets to the server, and only the server talks to the builder, over a private Podman network.
 
 ```mermaid
 flowchart LR
-    subgraph Laptop
+    subgraph Laptop["Laptop (Linux AppImage)"]
         APP["Laptop app<br/>Tauri 2 + Svelte 5<br/>CodeMirror 6 · xterm.js"]
         WP["waypipe client<br/>(app windows)"]
         ADB["adb server<br/>(plugged-in phone)"]
+    end
+    subgraph Mobile["Android Phone / Tablet"]
+        MOB["Mobile app<br/>Tauri 2 + Svelte 5<br/>Foreground Service · QR Scanner"]
     end
     subgraph Desktop["Desktop (rootless Podman)"]
         SRV["vb-server<br/>FastAPI · sign-in · files<br/>search · history · tunnels"]
@@ -177,6 +218,7 @@ flowchart LR
         DATA[("server data<br/>secrets · history")]
     end
     APP -- "HTTPS / WSS<br/>(tunnel or reverse proxy)" --> SRV
+    MOB -- "HTTPS / WSS<br/>(tunnel or reverse proxy)" --> SRV
     WP -. "rides the signed-in session" .- APP
     ADB -. "reverse tunnel" .- APP
     SRV -- "private network<br/>token-authenticated" --> BLD
@@ -187,7 +229,11 @@ flowchart LR
 
 * **vb-server** ([server/src/vbide/](server/src/vbide/)) holds everything that must stay out of the agents' reach: the authenticator secret, device tokens, sessions and the change history. It runs with a read-only root, every capability dropped and no new privileges, with the workspace mounted `nodev,nosuid,noexec`. It never runs git or anything from the workspace; git commands go to the builder.
 * **vb-builder** ([builder/](builder/)) is the agents' box: a persistent container (your `sudo pacman` installs survive restarts) with `--userns=keep-id`, so `coder` inside is you on the host and "root" inside is an unprivileged host user. Its small agent ([builder/agent/vbagent/](builder/agent/vbagent/)) owns the terminals, runs git and opens tunnel endpoints, and it only accepts the server.
-* **client-core** ([client-core/src/](client-core/src/)) is the shared TypeScript layer: the API client, sockets, Myers diff, fuzzy matching, auto-save and path helpers, written once for the laptop app and the planned phone app.
+* **desktop** ([desktop/](desktop/)): the Linux desktop app built with Tauri 2 and Svelte 5, featuring native window streaming with waypipe, adb reverse tunnels, and keychain integration.
+* **mobile** ([mobile/](mobile/)): the native Android app built with Tauri 2 and Svelte 5. Uses a custom Kotlin plugin (`VbAndroidPlugin`) for encrypted token storage and camera QR code pairing, and `TunnelForegroundService` to keep tunnels and sessions persistent in the background.
+* **client-core** ([client-core/src/](client-core/src/)): shared TypeScript library: API client, WebSocket communication, diffing, fuzzy matching, auto-save timers, and path resolution.
+* **client-state** ([client-state/src/](client-state/src/)): shared reactive Svelte 5 state stores powering the file tree, active editors, terminals, checkpoints, change-set reviews, and problem diagnostics across both desktop and mobile apps.
+* **tunnel-core** ([tunnel-core/src/](tunnel-core/src/)): shared Rust crate providing WebSocket TCP port tunneling and multiplexing across both desktop and Android clients.
 
 ### Live Updates (`/api/v1/live`)
 One WebSocket per app carries file changes, git status, change sets and terminal events, so the tree, open editors and the timeline update the moment an agent writes a file.
@@ -200,8 +246,8 @@ One WebSocket per app carries file changes, git status, change sets and terminal
 |---|---|
 | Before sign-in | only `/api/v1/auth/pair` and `/api/v1/auth/login` answer; no docs, no health page |
 | Authenticator | TOTP: only the code for the current 30-second step, and each code works once (no replay) |
-| Pairing | `vibebuilder pair`: a QR plus a 6-character code, valid 30 s, single use, stored only as a hash |
-| Devices | at most 3; the device token lives in the laptop's keychain; removing a device ends its session within seconds |
+| Pairing | `vibebuilder pair`: a QR (scannable with mobile camera) plus a 6-character code, valid 30 s, single use, stored only as a hash |
+| Devices | at most 3; device token lives in the OS keychain (desktop) or encrypted storage (Android); removing a device ends its session within seconds |
 | Sessions | in memory only (a server restart signs everyone out); the app checks in every 2 minutes, and the server ends a session it hasn't heard from in 10 minutes |
 | Failures | 5 per client address → 15-minute lockout; 30 across all addresses → pairing and login pause |
 | Setup QR | shown in the terminal for 30 s, never written to disk |
@@ -239,6 +285,8 @@ The first time a project is opened, if it has none of `AGENTS.md`, `CLAUDE.md`, 
 
 * **Kinds**: `claude`, `agy`, `shell` (fish) and `run` (Run App). Terminals are real PTYs in the builder that keep running with no app attached; reattaching replays their scrollback.
 * **Claude Code** is installed into the builder's home on first start, along with the edit hook. **agy** is used if it exists at `~/.local/bin/agy` on the desktop (mounted read-only). Agents run with `--dangerously-skip-permissions`: the container is the boundary, not a permission prompt.
+* **Agent Launch Options**: Launch dialogs allow customizing startup flags (such as Skip Permissions or Remote Control flags) before starting an agent.
+* **Mobile Touch Controls**: On Android, terminals feature an on-screen quick keys bar above the soft keyboard (`Esc`, `Ctrl+C`, `Tab`, `|`, `~`, `/`, `-`, `_`, arrow keys) for effortless terminal control on phones.
 * **Signing agents in**: sign in once in a builder shell. For agy, the builder has no keyring, so it keeps its token in a file in the builder's home.
 * **New shells** greet you with a short, witty fastfetch ([builder/rootfs/etc/vibebuilder/](builder/rootfs/etc/vibebuilder/)).
 
@@ -287,11 +335,11 @@ Arch Linux (`base-devel`) with fish, and:
 | `VB_TRUST_CF` | `1` | Use `CF-Connecting-IP` for client addresses (Cloudflare Tunnel only; set `0` otherwise) |
 | `VB_TOTP_ISSUER` | `VibeBuilder` | The name your authenticator app shows |
 | `VB_BUILDER_MEMORY` / `VB_BUILDER_CPUS` | `16g` / all cores | Builder limits |
-| `VB_APP_IDENTIFIER` | *(tauri.conf.json's)* | Laptop app: your own app id (keychain entry and saved settings belong to it) |
+| `VB_APP_IDENTIFIER` | *(tauri.conf.json's)* | Laptop & Android apps: your own app id (keychain entry on desktop, keystore on Android, and saved settings belong to it) |
 
 Changes take effect on `vibebuilder restart` (builder limits: on `vibebuilder rebuild`). No secrets go in this file: the authenticator secret, link token and device tokens are created by the commands below and stay in `VB_STATE_DIR`.
 
-### Commands ([bin/vibebuilder](bin/vibebuilder))
+### Commands ([bin/vibebuilder](bin/vibebuilder), [bin/vb-android](bin/vb-android))
 
 ```text
 vibebuilder install          one-time setup: folders, link token, systemd units
@@ -306,6 +354,11 @@ vibebuilder auth-qr          show the authenticator QR for 30 s
 vibebuilder history          change-history disk use
 vibebuilder shell [root]     a shell in the builder (as coder, or root)
 vibebuilder gpu-sync         after an NVIDIA driver update: refresh the builder's GPU files
+
+bin/vb-android --check       verify Android SDK/NDK, Java, Rust targets, and Node
+bin/vb-android init          initialize mobile Android project
+bin/vb-android dev           run on a connected phone / emulator in dev mode
+bin/vb-android build         build release APKs and AABs
 ```
 
 ---
@@ -334,12 +387,17 @@ VibeBuilder-IDE/
 │   ├── rootfs/                  # entrypoint, pacman hook, fish greeting, fastfetch
 │   └── agent/                   # vbagent: PTY terminals, git, checkpoint commits, tunnels; vb-edit-hook
 ├── client-core/                 # shared TypeScript: API client, sockets, diff, fuzzy, auto-save
+├── client-state/                # shared reactive Svelte 5 state: editors, terminals, tree, changes
+├── tunnel-core/                 # shared Rust crate: WebSocket TCP port tunnels & multiplexing
 ├── desktop/                     # laptop app (Tauri 2 + Svelte 5)
 │   ├── src/                     # components, commands & menus, editor, terminals, testing
 │   ├── src-tauri/               # Rust: keychain, tunnels, waypipe, adb
 │   └── e2e/                     # the real UI in Chromium against a real server
+├── mobile/                      # Android client (Tauri 2 + Svelte 5)
+│   ├── src/                     # mobile workbench, action sheets, symbol bar, terminal touch keys
+│   └── src-tauri/               # Rust + Kotlin: VbAndroidPlugin, foreground tunnel service, QR scanner
 ├── deploy/                      # Podman quadlet template, systemd unit, cloudflared example
-├── bin/                         # vibebuilder, vb-app, vb-builder-create, vb-gpu-sync
+├── bin/                         # vibebuilder, vb-app, vb-android, vb-builder-create, vb-gpu-sync
 └── vibebuilder.env.example      # every machine-specific setting
 ```
 

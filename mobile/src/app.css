@@ -1,0 +1,89 @@
+:root {
+  --bg: #111318;
+  --panel: #171a20;
+  --panel-2: #1c2028;
+  --editor-bg: #14161c;
+  --line: #262b35;
+  --line-2: #323845;
+  --text: #d4d7de;
+  --dim: #8a93a3;
+  --faint: #5f6878;
+  --accent: #6ea8ff;
+  --accent-2: #4d8df0;
+  --save: #f0a63a;
+  --save-2: #ffbd5c;
+  --ok: #7fcf7a;
+  --bad: #f0707a;
+  --warn: #e8c46a;
+  --claude: #e0905a;
+  --agy: #6fb6ff;
+  --add-bg: #1d3324;
+  --add-fg: #a8e6a3;
+  --del-bg: #3a1d22;
+  --del-fg: #ffa3aa;
+  --mono: "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", monospace;
+  --ui: "Inter", "Noto Sans", system-ui, -apple-system, sans-serif;
+  --text-scale: 1;
+  --kb-offset: 0px;
+  --app-height: 100%;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body, #app {
+  margin: 0;
+  width: 100%;
+  height: var(--app-height, 100%);
+  background: var(--bg);
+  color: var(--text);
+  font: calc(14px * var(--text-scale))/1.45 var(--ui);
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
+input, select, textarea { font: inherit; color: var(--text); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 36px; padding: 0 13px; border-radius: 8px;
+  background: #232833; border: 1px solid #313846; color: var(--text); white-space: nowrap;
+}
+.btn:active { background: #2d3442; }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.primary { background: var(--accent-2); border-color: var(--accent-2); color: #fff; font-weight: 600; }
+.btn.danger { background: #4a2228; border-color: #6a2c34; color: #ffd1d5; }
+.btn.ghost { background: transparent; border-color: transparent; }
+.btn.small { min-height: 30px; padding: 0 10px; font-size: 12.5px; border-radius: 6px; }
+
+.icon-btn {
+  display: inline-grid; place-items: center;
+  min-width: 36px; min-height: 36px; padding: 0 6px;
+  border-radius: 8px; border: 0; background: transparent; color: var(--dim);
+}
+.icon-btn:active { background: #ffffff14; color: var(--text); }
+.icon-btn.on { color: var(--text); background: #ffffff18; }
+
+.field {
+  min-height: 40px; padding: 0 12px; border-radius: 8px;
+  background: #0e1015; border: 1px solid var(--line-2); outline: none; width: 100%;
+}
+.field:focus { border-color: var(--accent); box-shadow: 0 0 0 2px #6ea8ff30; }
+
+.muted { color: var(--dim); }
+.faint { color: var(--faint); }
+.mono { font-family: var(--mono); }
+.badge { font-size: 11px; padding: 2px 7px; border-radius: 10px; background: #2a303c; color: var(--dim); font-weight: 600; }
+.src-claude { background: #4a2e1c; color: #ffc49a; }
+.src-agy { background: #1c3550; color: #a9d4ff; }
+.src-shell { background: #2a3a2a; color: #b8e6b3; }
+.src-restore { background: #3a2f4f; color: #d9c4ff; }
+.src-offline, .src-unknown { background: #33363d; color: #c3c8d2; }
+
+.git-modified { color: #e8c46a !important; }
+.git-added, .git-untracked { color: #8fd18a !important; }
+.git-deleted { color: #f0707a !important; }
+.git-conflict { color: #ff7ab8 !important; }
+.git-dir { color: #c9b98a !important; }
+
+.xterm-host { width: 100%; height: 100%; }
+.xterm .xterm-viewport { background-color: var(--editor-bg) !important; }

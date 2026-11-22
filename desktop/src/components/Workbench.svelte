@@ -27,7 +27,7 @@
       const r = await session.api.projects();
       ui.projects = r.projects;
       ui.hiddenFolders = r.hidden ?? [];
-      if (!ui.projects.includes(ui.project)) {
+      if (!ui.workspaceOpen && !ui.projects.includes(ui.project)) {
         // a nested folder from Open Folder: keep it if it still exists
         let ok = false;
         if (ui.project.includes("/")) {
@@ -35,7 +35,8 @@
         }
         if (!ok) {
           ui.recentFolders = ui.recentFolders.filter((p) => p !== ui.project);
-          ui.project = ui.projects[0] ?? "";
+          if (ui.projects[0]) ui.project = ui.projects[0];
+          else ui.workspaceOpen = true;
         }
       }
     } catch (e) {
@@ -45,7 +46,11 @@
 
   async function refreshAll() {
     await loadProjects();
-    if (ui.project) {
+    if (ui.workspaceOpen) {
+      if (!tree.children[""]) await tree.load("");
+      else for (const d of Object.keys(tree.children)) void tree.load(d, true);
+      void tree.refreshGit();
+    } else if (ui.project) {
       if (!tree.children[ui.project]) await tree.load(ui.project);
       else for (const d of Object.keys(tree.children)) void tree.load(d, true);
       tree.expanded[ui.project] = true;
@@ -89,18 +94,25 @@
     else terminals.disconnectAll();
   });
 
-  let lastProject = "";
+  let lastKey = "";
   $effect(() => {
     const p = ui.project;
+    const key = ui.workspaceOpen ? "__ws__" : p;
     ui.persist();
-    if (!p || p === lastProject || session.phase !== "ready") return;
-    lastProject = p;
+    if ((!p && !ui.workspaceOpen) || key === lastKey || session.phase !== "ready") return;
+    lastKey = key;
     tree.reset();
-    tree.expanded[p] = true;
-    void tree.load(p).then(() => tree.refreshGit());
-    void changes.reload();
-    void checkpoints.load();
-    void checkpoints.ensureRules();
+    if (ui.workspaceOpen) {
+      void tree.load("").then(() => tree.refreshGit());
+      void changes.reload();
+      void checkpoints.load();
+    } else {
+      tree.expanded[p] = true;
+      void tree.load(p).then(() => tree.refreshGit());
+      void changes.reload();
+      void checkpoints.load();
+      void checkpoints.ensureRules();
+    }
   });
 
   function key(e: KeyboardEvent) {

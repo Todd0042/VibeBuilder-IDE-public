@@ -29,9 +29,11 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "22"
+          node-version: "24"
           cache: "npm"
-          cache-dependency-path: desktop/package-lock.json
+          cache-dependency-path: |
+            desktop/package-lock.json
+            mobile/package-lock.json
 
       - name: Install System Dependencies
         run: |
@@ -45,8 +47,18 @@ jobs:
           pip install -e ".[test]" -e ../builder/agent playwright
           python -m playwright install --with-deps chromium
 
-      - name: Install JS Dependencies & Type Check
+      - name: Run client-core Unit Tests
+        run: node --test client-core/tests/core.test.ts
+
+      - name: Install JS Dependencies & Type Check (Desktop)
         working-directory: desktop
+        run: |
+          npm ci --no-audit --no-fund
+          npx svelte-check
+          npm run build
+
+      - name: Install JS Dependencies & Type Check (Mobile)
+        working-directory: mobile
         run: |
           npm ci --no-audit --no-fund
           npx svelte-check
@@ -57,3 +69,27 @@ jobs:
         run: |
           python -m pytest -q
           python -m pytest -q ../desktop/e2e
+
+  mobile-rust-check:
+    name: Mobile Rust & Android Targets Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install Linux WebKit Dependencies for Cargo Check
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Build Mobile Frontend & Check Rust Crate
+        run: |
+          (cd mobile && npm ci --no-audit --no-fund && npm run build)
+          (cd mobile/src-tauri && cargo check)

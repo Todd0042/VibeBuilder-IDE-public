@@ -5,3 +5,4 @@ export * from "./fuzzy";
 export * from "./autosave";
 export * from "./paths";
 export * from "./diff";
+export * from "./qr";

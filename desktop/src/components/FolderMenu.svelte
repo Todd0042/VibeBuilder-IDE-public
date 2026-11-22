@@ -17,7 +17,7 @@
   const match = (p: string) => !filter || p.toLowerCase().includes(filter.toLowerCase());
   const shown = $derived(ui.folderChoices.filter(match));
   const hidden = $derived(ui.hiddenFolders.filter(match));
-  const label = $derived(ui.project ? ui.project.slice(ui.project.lastIndexOf("/") + 1) : "No folder");
+  const label = $derived(ui.workspaceOpen ? "Workspace" : ui.project ? ui.project.slice(ui.project.lastIndexOf("/") + 1) : "No folder");
 
   async function toggle() {
     open = !open;

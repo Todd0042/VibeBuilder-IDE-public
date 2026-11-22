@@ -4545,6 +4545,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tunnel-core"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite",
+]
+
+[[package]]
 name = "typeid"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4653,7 +4663,6 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 name = "vibebuilder-ide"
 version = "0.1.0"
 dependencies = [
- "futures-util",
  "hostname",
  "keyring",
  "rustls",
@@ -4662,7 +4671,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tokio",
- "tokio-tungstenite",
+ "tunnel-core",
 ]
 
 [[package]]

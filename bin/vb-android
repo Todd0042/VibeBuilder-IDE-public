@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Build or run the Android app from the repo:
+#
+#   bin/vb-android --check   verify Android SDK/NDK, Java, Rust targets, and Node
+#   bin/vb-android init      initialize mobile/src-tauri/gen/android if needed
+#   bin/vb-android dev       run on a connected phone / emulator in dev mode
+#   bin/vb-android build     build release APKs and AABs
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+APP="$REPO/mobile"
+# shellcheck source=lib/vbconfig.sh
+. "$REPO/bin/lib/vbconfig.sh"
+export VITE_DEFAULT_SERVER="$VB_PUBLIC_URL"
+
+if [[ -z "${ANDROID_HOME:-}" ]]; then
+  for d in "$HOME/Android/Sdk" "/usr/local/lib/android/sdk"; do
+    if [[ -d "$d" ]]; then export ANDROID_HOME="$d"; break; fi
+  done
+fi
+export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+
+if [[ -z "${NDK_HOME:-}" && -n "${ANDROID_HOME:-}" && -d "$ANDROID_HOME/ndk" ]]; then
+  if [[ -d "$ANDROID_HOME/ndk/27.2.12479018" ]]; then
+    export NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+  else
+    latest_ndk="$(ls -1 "$ANDROID_HOME/ndk" 2>/dev/null | sort -V | tail -n1 || true)"
+    [[ -n "$latest_ndk" ]] && export NDK_HOME="$ANDROID_HOME/ndk/$latest_ndk"
+  fi
+fi
+
+if [[ -z "${JAVA_HOME:-}" && -d "/usr/lib/jvm/java-17-openjdk" ]]; then
+  export JAVA_HOME="/usr/lib/jvm/java-17-openjdk"
+fi
+
+overrides=()
+if [[ -n "${VB_APP_VERSION:-}" ]]; then
+  [[ "$VB_APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "VB_APP_VERSION must look like 1.2.3"; exit 1; }
+  overrides+=("\"version\":\"$VB_APP_VERSION\"")
+fi
+tauri_config=()
+((${#overrides[@]})) && tauri_config=(--config "{$(IFS=,; echo "${overrides[*]}")}")
+
+missing=()
+command -v cargo >/dev/null || missing+=("rust")
+command -v rustup >/dev/null || missing+=("rustup")
+command -v npm >/dev/null || missing+=("nodejs npm")
+command -v java >/dev/null || missing+=("jdk17-openjdk")
+[[ -n "${ANDROID_HOME:-}" && -d "${ANDROID_HOME:-}" ]] || missing+=("ANDROID_HOME (Android SDK)")
+[[ -n "${NDK_HOME:-}" && -d "${NDK_HOME:-}" ]] || missing+=("NDK_HOME (Android NDK)")
+
+if command -v rustup >/dev/null; then
+  installed_targets="$(rustup target list --installed || true)"
+  for t in aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android; do
+    grep -qx "$t" <<<"$installed_targets" || missing+=("rust-target:$t")
+  done
+fi
+
+if ((${#missing[@]})); then
+  echo "Missing prerequisites:"
+  printf '  - %s\n' "${missing[@]}"
+  exit 1
+fi
+
+[[ "${1:-}" == "--check" ]] && { echo "All set (ANDROID_HOME=$ANDROID_HOME, NDK_HOME=$NDK_HOME)."; exit 0; }
+
+cd "$APP"
+if [[ ! -d node_modules || ( -f package-lock.json && package-lock.json -nt node_modules/.package-lock.json ) ]]; then
+  echo "[vb-android] installing JS packages..."
+  if [[ -f package-lock.json ]]; then
+    npm ci --no-audit --no-fund
+  else
+    npm install --no-audit --no-fund
+  fi
+fi
+
+cmd="${1:-build}"
+shift || true
+
+if [[ "$cmd" == "init" ]]; then
+  npx tauri android init "${tauri_config[@]}" "$@"
+  python3 "$APP/src-tauri/android/sync-android.py"
+elif [[ "$cmd" == "dev" ]]; then
+  [[ -d "$APP/src-tauri/gen/android" ]] || npx tauri android init "${tauri_config[@]}"
+  python3 "$APP/src-tauri/android/sync-android.py"
+  exec npx tauri android dev "${tauri_config[@]}" "$@"
+elif [[ "$cmd" == "build" ]]; then
+  [[ -d "$APP/src-tauri/gen/android" ]] || npx tauri android init "${tauri_config[@]}"
+  python3 "$APP/src-tauri/android/sync-android.py"
+  exec npx tauri android build "${tauri_config[@]}" "$@"
+else
+  echo "Usage: bin/vb-android [--check|init|dev|build]"
+  exit 1
+fi

@@ -1,0 +1,14 @@
+// Minimal fastfetch greeting for narrow / mobile terminals (no ASCII logo or quips).
+{
+  "logo": { "type": "none" },
+  "display": { "separator": "  ", "key": { "width": 10 }, "color": { "keys": "38;5;208", "title": "38;5;39" } },
+  "modules": [
+    { "type": "title", "format": "{user-name}@{host-name}" },
+    { "type": "os", "key": "OS", "format": "{pretty-name}" },
+    { "type": "kernel", "key": "Kernel", "format": "{release}" },
+    { "type": "cpu", "key": "CPU", "format": "{cores-logical} cores" },
+    { "type": "memory", "key": "RAM", "format": "{used} / {total}" },
+    { "type": "disk", "key": "Disk", "folders": "/workspace", "format": "{used} / {total}" },
+    { "type": "command", "key": "Agents", "text": "a=(); command -v claude >/dev/null && a+=(claude); test -x ~/.local/bin/agy && a+=(agy); echo \"${a[*]:-none}\"" }
+  ]
+}

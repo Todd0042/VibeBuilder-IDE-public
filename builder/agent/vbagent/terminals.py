@@ -26,8 +26,12 @@ CONFIG = Path.home() / ".config" / "vibebuilder" / "terminals.json"
 SCROLLBACK = 2 * 1024 * 1024
 DEFAULTS = {
     "shell": "fish",
-    "claude": "claude --dangerously-skip-permissions",
-    "agy": "agy --dangerously-skip-permissions",
+    "claude": "claude",
+    "agy": "agy",
+}
+AGENT_FLAGS = {
+    "claude": {"--dangerously-skip-permissions", "--rc"},
+    "agy": {"--dangerously-skip-permissions", "--remote-control"},
 }
 TITLES = {"claude": "claude", "agy": "agy", "shell": "shell", "run": "run"}
 RUNTIME_DIR = "/tmp/xdg-coder"  # XDG_RUNTIME_DIR for apps (waypipe makes its Wayland socket here)
@@ -85,7 +89,14 @@ class Terminals:
         elif kind == "shell":
             argv = ["bash", "-lc", f"exec {shell} -l"]
         else:
-            argv = ["bash", "-lc", f"{cmds[kind]}; echo; echo '[{kind} exited, here is a shell]'; exec {shell} -l"]
+            if cmd.startswith("flags:"):
+                base = cmds[kind].replace("--dangerously-skip-permissions", "").strip()
+                allowed = AGENT_FLAGS[kind]
+                extra = [tok for tok in cmd[6:].split() if tok in allowed]
+                launch = f"{base} {' '.join(extra)}".strip()
+            else:
+                launch = cmds[kind]
+            argv = ["bash", "-lc", f"{launch}; echo; echo '[{kind} exited, here is a shell]'; exec {shell} -l"]
         master, slave = os.openpty()
         _set_size(slave, cols, rows)
         os.makedirs(RUNTIME_DIR, mode=0o700, exist_ok=True)

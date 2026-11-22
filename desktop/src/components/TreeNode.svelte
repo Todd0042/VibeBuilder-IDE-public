@@ -21,7 +21,7 @@
   }
 </script>
 
-<div class="row" class:sel={tree.selected === path} class:active class:root={depth === 0} style:padding-left="{depth * 12 + 6}px"
+<div class="row" class:sel={tree.selected === path} class:active class:root={depth === 0} style:padding-left="calc(6px + 2ch + {depth * 12}px)"
   role="treeitem" aria-selected={tree.selected === path} aria-expanded={kind === "dir" ? open : undefined} tabindex="-1"
   onclick={click} oncontextmenu={(e) => onmenu(e, path, kind)} onkeydown={() => {}}
   title={kind === "symlink" ? "Symlink: the IDE doesn't follow links (open the target instead)" : path}>
@@ -40,7 +40,7 @@
   {#each kids as e (e.name)}
     <TreeNode path="{path}/{e.name}" name={e.name} kind={e.kind} depth={depth + 1} {onmenu} />
   {/each}
-  {#if kids.length === 0}<div class="empty" style:padding-left="{(depth + 1) * 12 + 26}px">empty</div>{/if}
+  {#if kids.length === 0}<div class="empty" style:padding-left="calc(26px + 2ch + {(depth + 1) * 12}px)">empty</div>{/if}
 {/if}
 
 <style>

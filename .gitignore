@@ -17,6 +17,13 @@ node_modules/
 desktop/dist/
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
+mobile/dist/
+mobile/src-tauri/target/
+mobile/src-tauri/gen/
+*.apk
+*.aab
+*.jks
+*.keystore
 server/.venv/
 **/__pycache__/
 **/*.egg-info/

@@ -17,7 +17,10 @@
   let listEl: HTMLDivElement | undefined = $state();
   let pendingEnter = false; // Enter pressed before the file list arrived: open the best match when it does
 
-  const recent = $derived(editors.tabs.filter((t) => t.kind === "file").map((t) => (t as { path: string }).path.slice(ui.project.length + 1)));
+  const recent = $derived(editors.tabs.filter((t) => t.kind === "file").map((t) => {
+    const p = (t as { path: string }).path;
+    return ui.project ? p.slice(ui.project.length + 1) : p;
+  }));
   const hits: FuzzyHit[] = $derived(query.trim() ? fuzzyFilter(query, files, 60) : recent.concat(files.filter((f) => !recent.includes(f))).slice(0, 60).map((item) => ({ item, score: 0, marks: [] })));
 
   onMount(async () => {
@@ -43,7 +46,8 @@
     if (!h) return;
     ui.quickOpen = false;
     const m = query.match(/:(\d+)$/);
-    void editors.open(`${ui.project}/${h.item}`, m ? { line: Number(m[1]) } : undefined);
+    const full = ui.project ? `${ui.project}/${h.item}` : h.item;
+    void editors.open(full, m ? { line: Number(m[1]) } : undefined);
   }
 
   function key(e: KeyboardEvent) {
@@ -74,7 +78,7 @@
 
 <div class="back" role="presentation" onclick={() => (ui.quickOpen = false)}>
   <div class="box" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
-    <input bind:this={input} class="field" placeholder="Go to file in {ui.project} (add :line to jump)" bind:value={query} onkeydown={key} spellcheck="false" />
+    <input bind:this={input} class="field" placeholder="Go to file in {ui.project || 'Workspace'} (add :line to jump)" bind:value={query} onkeydown={key} spellcheck="false" />
     <div class="list" bind:this={listEl}>
       {#each hits as h, i (h.item)}
         <button class="row" class:sel={i === sel} onmouseenter={() => (sel = i)} onclick={() => choose(h)}>

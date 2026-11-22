@@ -43,7 +43,6 @@
   }
 
   function openHere(target = path) {
-    if (!target) return;
     ui.folderPicker = false;
     ui.openFolder(target);
   }
@@ -87,14 +86,20 @@
     </div>
     <input bind:this={input} class="field" placeholder="Type to filter · Enter: go in · Ctrl+Enter: open · Backspace: up" bind:value={filter} onkeydown={key} spellcheck="false" />
     <div class="list">
-      {#if path}<button class="row" ondblclick={up} onclick={up}><Icon name="folder" size={15} /><span>..</span></button>{/if}
+      <div class="ws-pin" class:active={!path}>
+        <button class="ws-btn" onclick={() => load("")}>
+          <Icon name="folderOpen" size={15} /><span>Workspace</span>
+        </button>
+        <button class="btn small" onclick={() => openHere("")}>Open</button>
+      </div>
+      {#if path}<button class="row indent" ondblclick={up} onclick={up}><Icon name="folder" size={15} /><span>..</span></button>{/if}
       {#each shown as d, i (d)}
-        <button class="row" class:sel={i === sel} onclick={() => (sel = i)} ondblclick={() => enter(d)} onmouseenter={() => (sel = i)}>
+        <button class="row indent" class:sel={i === sel} onclick={() => (sel = i)} ondblclick={() => enter(d)} onmouseenter={() => (sel = i)}>
           <Icon name="folder" size={15} /><span>{d}</span>
           <span class="go" role="presentation" onclick={(e) => { e.stopPropagation(); enter(d); }}><Icon name="chevronRight" size={13} /></span>
         </button>
       {/each}
-      {#if !loading && !shown.length}<p class="faint pad">{error || (filter ? "No matching folders" : "No folders here")}</p>{/if}
+      {#if !loading && !shown.length}<p class="faint pad indent">{error || (filter ? "No matching folders" : "No folders here")}</p>{/if}
     </div>
     <div class="foot">
       <button class="btn" onclick={newFolder}><Icon name="newFolder" size={14} /> New Folder</button>
@@ -103,8 +108,8 @@
       {#if shown[sel]}
         <button class="btn" onclick={() => openHere(path ? `${path}/${shown[sel]}` : shown[sel])}>Open “{shown[sel]}”</button>
       {/if}
-      <button class="btn primary" disabled={!path} onclick={() => openHere()} title={path ? "" : "Pick a folder inside the workspace"}>
-        Open {path ? `“${path.slice(path.lastIndexOf("/") + 1)}”` : ""}
+      <button class="btn primary" onclick={() => openHere()}>
+        Open {path ? `“${path.slice(path.lastIndexOf("/") + 1)}”` : "“Workspace”"}
       </button>
     </div>
   </div>
@@ -119,8 +124,16 @@
   .crumb { border: 0; background: none; padding: 1px 4px; border-radius: 4px; color: var(--accent); }
   .crumb:hover { background: #ffffff10; }
   .box > .field { margin: 0 16px 8px; width: auto; }
-  .list { overflow: auto; padding: 0 8px; min-height: 160px; }
+  .list { overflow: auto; padding: 0 8px 6px; min-height: 160px; }
+  .ws-pin {
+    position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px;
+    padding: 5px 8px; background: var(--panel-2); border-bottom: 1px solid var(--line); font-weight: 700;
+  }
+  .ws-btn { flex: 1; display: flex; align-items: center; gap: 8px; border: 0; background: none; padding: 2px 0; text-align: left; color: var(--text); }
+  .ws-pin.active .ws-btn { color: var(--accent); }
+  .ws-pin :global(svg) { color: #c9a95a; flex: none; }
   .row { width: 100%; display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 0; border-radius: 6px; background: none; text-align: left; color: var(--text); }
+  .row.indent, .pad.indent { padding-left: calc(8px + 2ch); }
   .row :global(svg) { color: #c9a95a; flex: none; }
   .row span:not(.go) { flex: 1; }
   .row.sel { background: #2f4168; }

@@ -59,6 +59,9 @@ export async function setZoom(factor: number): Promise<void> {
 
 // ---- app testing (Rust side: src-tauri/src/tunnel.rs). Only in the desktop app. ----------------------
 export const canTunnel = inTauri;
+export const canAdb = inTauri;
+export const canGui = inTauri;
+export const canQrScan = false;
 const needApp = () => { throw new Error("Only in the desktop app"); };
 
 export async function tunnelSession(server: string, session: string | null): Promise<void> {

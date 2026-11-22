@@ -49,7 +49,7 @@
 
   async function run() {
     if (timer) { clearTimeout(timer); timer = null; }
-    if (!query.trim() || !scope) { result = null; error = ""; return; }
+    if (!query.trim() || (!scope && !ui.workspaceOpen)) { result = null; error = ""; return; }
     const my = ++seq;
     busy = true;
     error = "";

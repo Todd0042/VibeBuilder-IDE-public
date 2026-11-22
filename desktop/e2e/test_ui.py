@@ -11,6 +11,7 @@ Run: cd server && .venv/bin/pytest -q ../desktop/e2e   (Chromium from Playwright
 from __future__ import annotations
 
 import os
+import base64
 import json
 import re
 import socket
@@ -204,12 +205,43 @@ def test_working_session(app):
         expect(picker.locator(".row", has_text="src")).to_be_visible()
         page.keyboard.press("Control+Enter")  # open the selected folder (src)
         expect(page.locator(".row.root")).to_contain_text("SRC")
-        expect(page.locator("select.project")).to_have_value("proj/src")
+        expect(page.locator(".title .project")).to_have_attribute("title", "/workspace/proj/src")
         page.keyboard.press("Control+p")
         expect(page.locator(".box .row").first).to_contain_text(".py")
         expect(page.locator(".box")).not_to_contain_text("README.md")  # outside the open folder
         page.keyboard.press("Escape")
-        page.locator("select.project").select_option("proj")
+
+        # The folder dropdown: hide a folder (gone from the list and the File menu), then unhide it.
+        page.locator(".title .project").click()
+        pop = page.locator(".pop")
+        nested = pop.locator(".list:not(.hidden-list) .row", has=page.get_by_text("proj/src", exact=True))
+        nested.hover()
+        nested.locator(".act").click()
+        expect(nested).to_have_count(0)
+        pop.locator(".section", has_text="Hidden folders (1)").click()
+        hidden_row = pop.locator(".hidden-list .row", has=page.get_by_text("proj/src", exact=True))
+        expect(hidden_row).to_be_visible()
+        shot(page, "07-folder-menu")
+        assert json.loads((app["data"] / "folders.json").read_text())["hidden"] == ["proj/src"]
+        hidden_row.locator(".act").click()
+        expect(pop.locator(".section", has_text="Hidden folders")).to_have_count(0)
+        expect(nested).to_be_visible()
+        pop.locator(".row", has=page.get_by_text("proj", exact=True)).click()
+        expect(page.locator(".title .project")).to_have_attribute("title", "/workspace/proj")
+
+        # Media: an image opens in the viewer (streamed through a ticket), not as "binary file".
+        (ws / "proj" / "dot.png").write_bytes(base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAEUlEQVR4nGP4z8DwnwGMERQARNAF+7BYSawAAAAASUVORK5CYII="))
+        page.keyboard.press("Control+p")
+        page.keyboard.type("dot.png")
+        expect(page.locator(".box .row").first).to_contain_text("dot.png")
+        page.keyboard.press("Enter")
+        img = page.locator(".pane:not(.hidden) .stage img")
+        expect(img).to_be_visible()
+        wait_for(lambda: img.evaluate("i => i.naturalWidth") == 2, "the image to load")
+        expect(page.locator(".pane:not(.hidden) .bar")).to_contain_text("2 × 3")
+        shot(page, "08-media-viewer")
+        page.keyboard.press("Control+w")
 
         # A terminal.
         page.locator(".newbtn.k-shell").click()

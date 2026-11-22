@@ -77,6 +77,11 @@ class Settings:
         return self.data_dir / "agent_rules.json"
 
     @property
+    def folders_file(self) -> Path:
+        """Folders hidden from the app's folder list (shared by every device)."""
+        return self.data_dir / "folders.json"
+
+    @property
     def pair_dir(self) -> Path:
         """Where `vbide pair` publishes the current pairing code for the running server to accept."""
         return self.data_dir / "pairing"

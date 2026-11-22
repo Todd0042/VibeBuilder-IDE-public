@@ -24,7 +24,9 @@
 
   async function loadProjects() {
     try {
-      ui.projects = (await session.api.projects()).projects;
+      const r = await session.api.projects();
+      ui.projects = r.projects;
+      ui.hiddenFolders = r.hidden ?? [];
       if (!ui.projects.includes(ui.project)) {
         // a nested folder from Open Folder: keep it if it still exists
         let ok = false;

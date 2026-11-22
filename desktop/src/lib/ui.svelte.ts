@@ -16,6 +16,8 @@ function stored<T>(key: string, fallback: T): T {
 class UiState {
   project = $state<string>(stored("vb.project", ""));
   projects = $state<string[]>([]);
+  /** Folders hidden from the folder list (kept on the server, so every device agrees). */
+  hiddenFolders = $state<string[]>([]);
   /** Folders opened with File → Open Folder (any depth), most recent first. */
   recentFolders = $state<string[]>(stored("vb.recentFolders", []));
   side = $state<SideView>("explorer");
@@ -40,10 +42,11 @@ class UiState {
     this.project = path;
   }
 
-  /** What the folder dropdown and File menu list: recent nested folders, then the projects. */
+  /** What the folder dropdown and File menu list: recent nested folders, then the projects, minus hidden ones. */
   get folderChoices(): string[] {
-    const nested = this.recentFolders.filter((p) => p.includes("/"));
-    return [...nested, ...this.projects.filter((p) => !nested.includes(p))];
+    const hidden = new Set(this.hiddenFolders);
+    const nested = this.recentFolders.filter((p) => p.includes("/") && !hidden.has(p));
+    return [...nested, ...this.projects.filter((p) => !nested.includes(p) && !hidden.has(p))];
   }
 
   folderPicker = $state(false);

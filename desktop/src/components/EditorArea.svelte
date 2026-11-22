@@ -2,6 +2,7 @@
   import logo from "../assets/logo.png";
   import Icon from "./Icon.svelte";
   import CodeEditor from "./CodeEditor.svelte";
+  import MediaView from "./MediaView.svelte";
   import ReviewView from "./ReviewView.svelte";
   import ContextMenu, { type MenuItem } from "./ContextMenu.svelte";
   import { editors, type Tab } from "../lib/editors.svelte";
@@ -69,7 +70,9 @@
     <div class="content">
       {#each editors.tabs as t (t.id)}
         <div class="pane" class:hidden={t.id !== editors.activeId}>
-          {#if t.kind === "file"}
+          {#if t.kind === "file" && t.media}
+            <MediaView tab={t} active={t.id === editors.activeId} />
+          {:else if t.kind === "file"}
             <CodeEditor tab={t} active={t.id === editors.activeId} />
           {:else}
             <ReviewView tab={t} />

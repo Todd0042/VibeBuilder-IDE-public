@@ -14,7 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from . import agent_link, agent_rules, checkpoints, files, live, problems, search, tunnels
+from . import agent_link, agent_rules, checkpoints, files, live, media, problems, search, tunnels
 from .agent_link import AgentLink
 from .auth import routes as auth_routes
 from .auth.devices import DeviceStore
@@ -101,7 +101,7 @@ def create_app(settings: Settings | None = None, svc: Services | None = None) ->
         return response
 
     for r in (auth_routes.router, files.router, search.router, history_routes.router, agent_link.router,
-              live.router, tunnels.router, checkpoints.router, agent_rules.router, problems.router):
+              live.router, tunnels.router, checkpoints.router, agent_rules.router, problems.router, media.router):
         app.include_router(r)
     return app
 
@@ -112,7 +112,7 @@ def openapi_schema() -> dict:
 
     app = FastAPI()
     for r in (auth_routes.router, files.router, search.router, history_routes.router, agent_link.router,
-              checkpoints.router, agent_rules.router, problems.router):
+              checkpoints.router, agent_rules.router, problems.router, media.router):
         app.include_router(r)
     return get_openapi(title="VibeBuilder-IDE", version="1", routes=app.routes)
 

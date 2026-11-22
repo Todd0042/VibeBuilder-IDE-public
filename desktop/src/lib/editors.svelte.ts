@@ -3,6 +3,7 @@
 import { ApiError, AutoSave, basename, type FileContent } from "@core/index";
 import { session } from "./session.svelte";
 import { ui } from "./ui.svelte";
+import { mediaKind, type MediaKind } from "./media";
 
 export type EditorCommand = "undo" | "redo" | "selectAll" | "find" | "replace" | "gotoLine" | "toggleComment" | "cut" | "copy" | "paste";
 
@@ -32,6 +33,10 @@ export interface FileTab {
   notice: string;
   handle: EditorHandle | null;
   pendingGoTo: { line: number; col?: number; length?: number } | null;
+  /** Shown in the media viewer instead of the editor. */
+  media: MediaKind | null;
+  /** Bumped when the file changes on disk, so the viewer reloads it. */
+  mediaRev: number;
 }
 
 export type ReviewSource = { type: "changeset"; id: number } | { type: "range"; since: number; label: string } |
@@ -61,7 +66,7 @@ class Editors {
   }
 
   // ---- opening ---------------------------------------------------------------------------------
-  async open(path: string, goTo?: { line: number; col?: number; length?: number }) {
+  async open(path: string, goTo?: { line: number; col?: number; length?: number }, asText = false) {
     const existing = this.file(path);
     if (existing) {
       this.activeId = existing.id;
@@ -72,10 +77,15 @@ class Editors {
     const tab: FileTab = {
       kind: "file", id: path, path, title: basename(path), etag: null, initial: "", binary: false, dirty: false,
       loading: true, pinned: false, conflict: null, deletedOnDisk: false, notice: "", handle: null, pendingGoTo: goTo ?? null,
+      media: asText ? null : mediaKind(path), mediaRev: 0,
     };
     const at = this.tabs.findIndex((t) => t.id === this.activeId);
     this.tabs.splice(at < 0 ? this.tabs.length : at + 1, 0, tab);
     this.activeId = tab.id;
+    if (tab.media) { // the viewer loads it itself (any size, streamed)
+      Object.assign(tab, { binary: true, loading: false });
+      return;
+    }
     try {
       const f = await session.api.read(path);
       const t = this.file(path);
@@ -170,6 +180,7 @@ class Editors {
   async onDiskChange(paths: string[]) {
     for (const p of paths) {
       const tab = this.file(p);
+      if (tab?.media) { tab.mediaRev++; continue; }
       if (!tab || tab.loading || tab.binary) continue;
       let f: FileContent;
       try {
@@ -253,6 +264,7 @@ class Editors {
 
   /** Throw away unsaved edits and reload the file from disk. */
   async revert(tab: FileTab) {
+    if (tab.media) { tab.mediaRev++; return; }
     if (tab.dirty && !(await ui.confirm(`Revert ${tab.title}?`, "Your unsaved changes are thrown away and the file is reloaded from disk.", "Revert", true))) return;
     try {
       const f = await session.api.read(tab.path);

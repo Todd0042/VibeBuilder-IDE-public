@@ -2,6 +2,7 @@
   import logo from "../assets/logo.png";
   import Icon from "./Icon.svelte";
   import MenuBar from "./MenuBar.svelte";
+  import FolderMenu from "./FolderMenu.svelte";
   import { ui } from "../lib/ui.svelte";
   import { editors } from "../lib/editors.svelte";
   import { session } from "../lib/session.svelte";
@@ -14,14 +15,7 @@
   <div class="left">
     <img class="logo" src={logo} alt="VibeBuilder" />
     <MenuBar />
-    <select class="project" value={ui.project} title="Folder" onchange={(e) => {
-      const v = (e.currentTarget as HTMLSelectElement).value;
-      if (v === "\u0000open") { (e.currentTarget as HTMLSelectElement).value = ui.project; ui.folderPicker = true; }
-      else ui.openFolder(v);
-    }}>
-      {#each ui.folderChoices as p}<option value={p}>{p}</option>{/each}
-      <option value={"\u0000open"}>Open Folder…</option>
-    </select>
+    <FolderMenu />
   </div>
 
   <button class="quick" onclick={() => (ui.quickOpen = true)}>
@@ -51,7 +45,6 @@
   .left, .right { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .right { justify-content: flex-end; }
   .logo { width: 24px; height: 24px; border-radius: 6px; flex: none; }
-  .project { height: 28px; min-width: 140px; max-width: 260px; padding: 0 8px; border-radius: 6px; background: #1b1f27; border: 1px solid var(--line-2); font-weight: 600; }
   .quick { height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 6px; background: #1b1f27; border: 1px solid var(--line-2); color: var(--dim); }
   .quick span { flex: 1; text-align: left; }
   .quick:hover { border-color: #3d4556; color: var(--text); }

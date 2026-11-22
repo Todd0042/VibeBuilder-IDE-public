@@ -46,7 +46,9 @@
       Auto-save in {fmt(autosaveIn)}
     </button>
   {/if}
-  {#if active?.kind === "file"}
+  {#if active?.kind === "file" && active.media}
+    <span class="item">{active.media[0].toUpperCase() + active.media.slice(1)}</span>
+  {:else if active?.kind === "file"}
     <span class="item">Ln {cursor.line}, Col {cursor.col}{cursor.selected ? ` (${cursor.selected} selected)` : ""}{cursor.cursors > 1 ? ` · ${cursor.cursors} cursors` : ""}</span>
     <span class="item">{languageName(active.path)}</span>
   {/if}

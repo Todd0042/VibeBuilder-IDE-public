@@ -81,7 +81,14 @@ export class Api {
   revokeDevice(id: string) { return this.req("DELETE", `/api/v1/auth/devices/${encodeURIComponent(id)}`); }
 
   // ---- files -------------------------------------------------------------------------------------
-  projects() { return this.req<{ projects: string[] }>("GET", "/api/v1/projects"); }
+  projects() { return this.req<{ projects: string[]; hidden: string[] }>("GET", "/api/v1/projects"); }
+  /** Hide a folder from the folder list, or show it again. Nothing on disk changes. */
+  setHidden(path: string, hidden: boolean) { return this.req<{ hidden: string[] }>("PUT", "/api/v1/folders/hidden", { path, hidden }); }
+  /** A URL an <img>/<video>/<audio> can load one file from (the ticket in it dies with this session). */
+  async mediaUrl(path: string) {
+    const r = await this.req<{ url: string; mime: string; size: number }>("POST", "/api/v1/media/ticket", { path });
+    return { ...r, url: this.server + r.url };
+  }
   list(path: string, background = false) {
     // path "" is the workspace itself, so it's always sent (q() drops empty values)
     return this.req<DirListing>("GET", "/api/v1/fs/list?path=" + encodeURIComponent(path), undefined, { background });

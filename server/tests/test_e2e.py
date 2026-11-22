@@ -290,3 +290,44 @@ def test_tunnels(stack):
     r = c.post("/api/v1/terminals", json={"kind": "run", "cmd": "echo hi-from-run"})
     assert r.status_code == 200 and r.json()["kind"] == "run" and r.json()["title"].startswith("▶")
     c.delete(f"/api/v1/terminals/{r.json()['id']}")
+
+
+def test_media_and_hidden_folders(stack):
+    c, _session = signed_in(stack, "198.51.100.30")
+    ws = stack["ws"]
+    clip = bytes(range(256)) * 40  # 10 240 bytes standing in for a video
+    (ws / "proj" / "clip.mp4").write_bytes(clip)
+
+    # Only media files get a ticket, and only from inside the workspace.
+    assert c.post("/api/v1/media/ticket", json={"path": "proj/README.md"}).status_code == 415
+    assert c.post("/api/v1/media/ticket", json={"path": "proj/nope.mp4"}).status_code == 404
+    assert c.post("/api/v1/media/ticket", json={"path": "../secret.mp4"}).status_code in (400, 403, 404)
+    r = c.post("/api/v1/media/ticket", json={"path": "proj/clip.mp4"})
+    assert r.status_code == 200, r.text
+    t = r.json()
+    assert t["mime"] == "video/mp4" and t["size"] == len(clip)
+
+    anon = httpx.Client(base_url=stack["url"], timeout=10)  # the URL alone is enough: no Authorization header
+    full = anon.get(t["url"])
+    assert full.status_code == 200 and full.content == clip and full.headers["accept-ranges"] == "bytes"
+    assert "sandbox" in full.headers["content-security-policy"]
+    part = anon.get(t["url"], headers={"range": "bytes=100-199"})
+    assert part.status_code == 206 and part.content == clip[100:200]
+    assert part.headers["content-range"] == f"bytes 100-199/{len(clip)}"
+    tail = anon.get(t["url"], headers={"range": "bytes=-10"})
+    assert tail.status_code == 206 and tail.content == clip[-10:]
+    assert anon.get(t["url"], headers={"range": f"bytes={len(clip)}-"}).status_code == 416
+    assert anon.get("/api/v1/media/raw", params={"t": "made-up"}).status_code == 401
+
+    # Hidden folders: kept on the server, nothing on disk changes, unhide puts it back.
+    assert c.get("/api/v1/projects").json()["hidden"] == []
+    assert c.put("/api/v1/folders/hidden", json={"path": "proj", "hidden": True}).json()["hidden"] == ["proj"]
+    r = c.get("/api/v1/projects").json()
+    assert r["hidden"] == ["proj"] and r["projects"] == ["proj"] and (ws / "proj").is_dir()
+    assert c.put("/api/v1/folders/hidden", json={"path": "proj", "hidden": False}).json()["hidden"] == []
+    assert c.put("/api/v1/folders/hidden", json={"path": "", "hidden": True}).status_code == 400
+
+    # The ticket dies with the session.
+    c.post("/api/v1/auth/logout")
+    assert anon.get(t["url"]).status_code == 401
+    (ws / "proj" / "clip.mp4").unlink()

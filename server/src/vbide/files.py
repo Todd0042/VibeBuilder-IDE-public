@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
+import threading
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
@@ -47,7 +50,48 @@ async def projects(_: SessionDep, request: Request) -> dict:
     svc = services(request)
     entries = await run_in_threadpool(_jail_call, svc.jail.list_dir, "")
     names = sorted((e.name for e in entries if e.kind == "dir" and not e.name.startswith(".")), key=str.lower)
-    return {"projects": names}
+    return {"projects": names, "hidden": sorted(_hidden(svc.settings.folders_file), key=str.lower)}
+
+
+# ---- folders hidden from the folder list (only hidden: nothing on disk changes) ----------------------
+_folders_lock = threading.Lock()
+MAX_HIDDEN = 5000
+
+
+def _hidden(path) -> set[str]:
+    try:
+        data = json.loads(path.read_text())
+        return {p for p in data.get("hidden", []) if isinstance(p, str)}
+    except FileNotFoundError:
+        return set()
+    except (OSError, ValueError, AttributeError) as exc:
+        raise HTTPException(500, f"Couldn't read the hidden-folders list ({path}): {exc}")
+
+
+class HideBody(BaseModel):
+    path: str = Field(max_length=4096)
+    hidden: bool
+
+
+@router.put("/folders/hidden")
+def set_hidden(body: HideBody, _: SessionDep, request: Request) -> dict:
+    svc = services(request)
+    rel = _jail_call(clean_rel, body.path)
+    if not rel:
+        raise HTTPException(400, "Pick a folder")
+    f = svc.settings.folders_file
+    with _folders_lock:
+        hidden = _hidden(f)
+        if body.hidden:
+            if len(hidden) >= MAX_HIDDEN:
+                raise HTTPException(400, "Too many hidden folders")
+            hidden.add(rel)
+        else:
+            hidden.discard(rel)
+        tmp = f.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"hidden": sorted(hidden)}, indent=1))
+        os.replace(tmp, f)
+    return {"hidden": sorted(hidden, key=str.lower)}
 
 
 @router.get("/fs/list")

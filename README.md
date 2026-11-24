@@ -427,6 +427,7 @@ The same suite runs on every push ([.github/workflows/ci.yml](.github/workflows/
 ### ⚖️ 3. Software License & Commercial Inquiries
 * **Non-Commercial Use**: VibeBuilder IDE is licensed for personal, hobbyist, educational and other non-commercial use under the **[PolyForm Noncommercial License 1.0.0](LICENSE)**.
 * **Commercial Licensing Inquiries**: Commercial use (inside a company, as a paid service, or bundled into a product) is not permitted under this license. To ask about a separate commercial license, reach out to **[todd.0042.git@gmail.com](mailto:todd.0042.git@gmail.com)**.
+* **Media License**: the images, artwork and audio made for this project (paths listed in [LICENSE-MEDIA](LICENSE-MEDIA)) are © Todd0042 under **[CC BY-NC 4.0](LICENSE-MEDIA)**: free to share and adapt with credit for non-commercial purposes; commercial use requires permission.
 * **Third-Party Open-Source Attributions**: Tauri (MIT/Apache-2.0), Svelte (MIT), CodeMirror (MIT), xterm.js (MIT), FastAPI (MIT), Uvicorn (BSD-3-Clause), pyotp (MIT), segno (BSD-3-Clause), waypipe (MIT), ripgrep (MIT/Unlicense) and the packages in each `package.json` and `pyproject.toml` keep their own licenses. Claude Code and agy are their vendors' products, installed under their own terms.
 
 ---

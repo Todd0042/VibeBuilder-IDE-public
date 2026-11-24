@@ -268,7 +268,7 @@ Set `VB_PROXY` in `vibebuilder.env` to match how traffic reaches `127.0.0.1:8765
 * **Recording** ([history/recorder.py](server/src/vbide/history/recorder.py)): inotify watches the workspace. Each changed file is stored once it has settled (2 s), and edits that arrive close together (5 s of quiet ends a set) become one **change set**.
 * **Attribution**: Claude Code reports each edit through a PostToolUse hook ([builder/agent/vb-edit-hook](builder/agent/vb-edit-hook)), so its changes are labelled exactly. Other changes are credited to whichever terminal was busy at the time.
 * **Storage** ([history/store.py](server/src/vbide/history/store.py)): SQLite for the index, zstd-compressed blobs for file versions (Python 3.14's `compression.zstd`). Files over 4 MB are skipped.
-* **The 10 GB cap**: when history passes `history_cap_bytes`, the files that have gone longest without a change lose their history first, so what you're actively working on keeps its full past.
+* **The rolling cap**: defaults to 10 GB (`history_cap_bytes`), adjustable in **Devices** (`2` / `5` / `10` / `25` GB + **Apply & Prune** via `POST /api/v1/history/prune`). When history passes the cap, the files that have gone longest without a change lose their history first, so what you're actively working on keeps its full past.
 * **Review** ([desktop/src/components/ReviewView.svelte](desktop/src/components/ReviewView.svelte)): hunks with 3 lines of context, "More context" and "Whole file", restore a file, or undo a whole set.
 
 ### Checkpoint Commits ([server/src/vbide/checkpoints.py](server/src/vbide/checkpoints.py), [builder/agent/vbagent/checkpoints.py](builder/agent/vbagent/checkpoints.py))

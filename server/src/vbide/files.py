@@ -28,7 +28,9 @@ def decode_text(data: bytes) -> str | None:
         return None
     try:
         return data.decode("utf-8")
-    except UnicodeDecodeError:
+    except UnicodeDecodeError as exc:
+        import logging
+        logging.getLogger("vbide.files").debug("Non-UTF-8 file treated as binary: %s", exc)
         return None
 
 

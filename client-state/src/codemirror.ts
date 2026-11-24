@@ -1,12 +1,12 @@
 // CodeMirror setup: editing features without the frills, dark theme, lazy language loading.
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete";
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentWithTab, redo, selectAll, toggleComment, undo } from "@codemirror/commands";
 import {
   bracketMatching, foldGutter, foldKeymap, HighlightStyle, indentOnInput, indentUnit, LanguageDescription, syntaxHighlighting,
 } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
-import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
-import { Compartment, EditorState, type Extension } from "@codemirror/state";
+import { gotoLine, highlightSelectionMatches, openSearchPanel, search, searchKeymap } from "@codemirror/search";
+import { Compartment, EditorState, type Extension, type Text } from "@codemirror/state";
 import {
   crosshairCursor, drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter,
   highlightSpecialChars, keymap, lineNumbers, rectangularSelection,
@@ -93,7 +93,8 @@ export async function languageFor(path: string): Promise<Extension | null> {
   if (!desc) return null;
   try {
     return await desc.load();
-  } catch {
+  } catch (err) {
+    console.debug(`Language load failed for ${path}:`, err);
     return null;
   }
 }
@@ -101,6 +102,78 @@ export async function languageFor(path: string): Promise<Extension | null> {
 export function languageName(path: string): string {
   const name = path.slice(path.lastIndexOf("/") + 1);
   return LanguageDescription.matchFilename(languages, name)?.name ?? "Plain Text";
+}
+
+export function createEditorBridge(opts: {
+  getView: () => EditorView | null;
+  setSavedDoc: (doc: Text) => void;
+  onPasteError: () => void;
+  afterGoTo?: () => void;
+  focusReplace?: boolean;
+}) {
+  const simpleCmds: Record<string, (v: EditorView) => boolean> = {
+    undo,
+    redo,
+    selectAll,
+    toggleComment,
+    gotoLine,
+  };
+  return {
+    exec(cmd: string) {
+      const v = opts.getView();
+      if (!v) return;
+      v.focus();
+      const fn = simpleCmds[cmd];
+      if (fn) { fn(v); return; }
+      if (cmd === "find" || cmd === "replace") {
+        openSearchPanel(v);
+        if (cmd === "replace" && opts.focusReplace) {
+          requestAnimationFrame(() => v.dom.querySelector<HTMLInputElement>(".cm-search input[name=replace]")?.focus());
+        }
+        return;
+      }
+      if (cmd === "copy" || cmd === "cut") {
+        const sel = v.state.sliceDoc(v.state.selection.main.from, v.state.selection.main.to);
+        if (sel) {
+          void navigator.clipboard.writeText(sel);
+          if (cmd === "cut") v.dispatch(v.state.replaceSelection(""));
+        }
+        return;
+      }
+      if (cmd === "paste") {
+        navigator.clipboard.readText()
+          .then((t) => v.dispatch(v.state.replaceSelection(t)))
+          .catch(() => opts.onPasteError());
+      }
+    },
+    getText: () => opts.getView()!.state.doc.toString(),
+    setText: (text: string, keepCursor?: boolean) => {
+      const v = opts.getView();
+      if (!v) return;
+      const sel = v.state.selection.main.head;
+      v.dispatch({
+        changes: { from: 0, to: v.state.doc.length, insert: text },
+        selection: keepCursor ? { anchor: Math.min(sel, text.length) } : undefined,
+      });
+    },
+    markSaved: () => {
+      const v = opts.getView();
+      if (v) opts.setSavedDoc(v.state.doc);
+    },
+    goTo: (line: number, col = 0, length = 0) => {
+      const v = opts.getView();
+      if (!v) return;
+      const l = v.state.doc.line(Math.max(1, Math.min(line, v.state.doc.lines)));
+      const from = Math.min(l.from + col, l.to);
+      v.dispatch({
+        selection: { anchor: from, head: Math.min(from + length, l.to) },
+        scrollIntoView: true,
+        effects: EditorView.scrollIntoView(from, { y: "center" }),
+      });
+      opts.afterGoTo?.();
+    },
+    focus: () => opts.getView()?.focus(),
+  };
 }
 
 export { EditorState, EditorView };

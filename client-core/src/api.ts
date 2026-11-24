@@ -123,6 +123,10 @@ export class Api {
     return this.req<{ stored_bytes: number; raw_bytes: number; blobs: number; versions: number; cap_bytes: number }>(
       "GET", "/api/v1/history/usage", undefined, { background: true });
   }
+  pruneHistory(capGb?: number) {
+    return this.req<{ freed_bytes: number; usage: { stored_bytes: number; raw_bytes: number; blobs: number; versions: number; cap_bytes: number } }>(
+      "POST", "/api/v1/history/prune", capGb !== undefined ? { cap_gb: capGb } : {});
+  }
   fileTimeline(path: string) { return this.req<{ path: string; versions: FileVersion[] }>("GET", "/api/v1/history/file" + this.q({ path })); }
   restoreChangeset(changeset: number) { return this.req<{ changeset: number; restored: string[] }>("POST", "/api/v1/history/restore", { changeset }); }
   restoreFile(path: string, state: string | null) {

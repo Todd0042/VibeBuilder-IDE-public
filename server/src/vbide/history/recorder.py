@@ -15,6 +15,7 @@ something outside the workspace; contents are read through the Jail too.
 from __future__ import annotations
 
 import errno
+import logging
 import os
 import stat as st
 import threading
@@ -26,6 +27,8 @@ from inotify_simple import INotify, flags as F
 
 from ..jail import Jail, JailError
 from .store import BINARY_PREFIX, HistoryStore, content_hash
+
+log = logging.getLogger("vbide.history.recorder")
 
 # Folders that are build output or caches: never watched, never recorded.
 SKIP_DIRS = {
@@ -96,7 +99,8 @@ class Recorder:
     def _add_watch(self, rel: str) -> None:
         try:
             fd = self.jail.fchdir_to(rel)
-        except JailError:
+        except JailError as exc:
+            log.debug("Skipping inotify watch for %r: %s", rel, exc)
             return
         try:
             wd = self._inotify.add_watch(f"/proc/self/fd/{fd}", WATCH_FLAGS)
@@ -119,7 +123,8 @@ class Recorder:
             self._add_watch(rel)
         try:
             entries = self.jail.list_dir(rel)
-        except (JailError, OSError):
+        except (JailError, OSError) as exc:
+            log.debug("Skipping directory walk for %r: %s", rel, exc)
             return
         for e in entries:
             if skip_name(e.name):
@@ -179,44 +184,45 @@ class Recorder:
         return self.store.put_blob(data)
 
     # ---- following -------------------------------------------------------------------------
+    def _handle_inotify_event(self, ev, now: float) -> str | None:
+        if ev.mask & F.Q_OVERFLOW:
+            self._rescan_all()
+            return None
+        folder = self._wd.get(ev.wd)
+        if folder is None:
+            return None
+        if ev.mask & (F.DELETE_SELF | F.MOVE_SELF | F.IGNORED):
+            self._wd.pop(ev.wd, None)
+            return None
+        if not ev.name or skip_name(ev.name):
+            return None
+        rel = f"{folder}/{ev.name}" if folder else ev.name
+        if ev.mask & F.ISDIR:
+            if ev.mask & (F.CREATE | F.MOVED_TO):
+                found: dict[str, None] = {}
+                self._walk(rel, found, watch=True)
+                with self._lock:
+                    for p in found:
+                        self._pending[p] = now
+            elif ev.mask & (F.DELETE | F.MOVED_FROM):
+                with self._lock:
+                    for p, h in self.store.known_paths().items():
+                        if h is not None and p.startswith(rel + "/"):
+                            self._pending[p] = now
+            return rel
+        with self._lock:
+            self._pending[rel] = now
+        return rel
+
     def _follow(self) -> None:
         while not self._stop.is_set():
             try:
                 events = self._inotify.read(timeout=500)
-            except OSError:
+            except OSError as exc:
+                log.debug("inotify read interrupted: %s", exc)
                 continue
             now = time.time()
-            changed_paths: list[str] = []
-            for ev in events:
-                if ev.mask & F.Q_OVERFLOW:
-                    self._rescan_all()
-                    continue
-                folder = self._wd.get(ev.wd)
-                if folder is None:
-                    continue
-                if ev.mask & (F.DELETE_SELF | F.MOVE_SELF | F.IGNORED):
-                    self._wd.pop(ev.wd, None)
-                    continue
-                if not ev.name or skip_name(ev.name):
-                    continue
-                rel = f"{folder}/{ev.name}" if folder else ev.name
-                if ev.mask & F.ISDIR:
-                    if ev.mask & (F.CREATE | F.MOVED_TO):
-                        found: dict[str, None] = {}
-                        self._walk(rel, found, watch=True)
-                        with self._lock:
-                            for p in found:
-                                self._pending[p] = now
-                    elif ev.mask & (F.DELETE | F.MOVED_FROM):
-                        with self._lock:
-                            for p, h in self.store.known_paths().items():
-                                if h is not None and p.startswith(rel + "/"):
-                                    self._pending[p] = now
-                    changed_paths.append(rel)
-                    continue
-                with self._lock:
-                    self._pending[rel] = now
-                changed_paths.append(rel)
+            changed_paths = [p for ev in events if (p := self._handle_inotify_event(ev, now)) is not None]
             if changed_paths:
                 self.emit("fs", {"paths": sorted(set(changed_paths))[:500]})
 
@@ -230,6 +236,20 @@ class Recorder:
             for p, h in self.store.known_paths().items():
                 if h is not None and p not in found:
                     self._pending[p] = now
+
+    def _close_idle_changeset(self, cs: int, started: float, last: float, paths: list[str]) -> None:
+        try:
+            source = self.attribute(started, last, paths)
+        except Exception as exc:
+            log.debug("Changeset attribution fallback to unknown: %s", exc)
+            source = "unknown"
+        self.store.close_changeset(cs, source)
+        for p in set(paths):
+            self.changed(p, source)
+        info = self.store.changeset(cs)
+        if info:
+            self.emit("changeset", {**info, "file_count": len(set(paths))})
+        self.store.enforce_cap()
 
     def _tick(self) -> None:
         """Snapshot settled files; close the change set once things go quiet."""
@@ -255,17 +275,7 @@ class Recorder:
                     if now - t > 120:
                         del self._expected[p]
             if close and cs is not None:
-                try:
-                    source = self.attribute(started, last, paths)
-                except Exception:
-                    source = "unknown"
-                self.store.close_changeset(cs, source)
-                for p in set(paths):
-                    self.changed(p, source)
-                info = self.store.changeset(cs)
-                if info:
-                    self.emit("changeset", {**info, "file_count": len(set(paths))})
-                self.store.enforce_cap()
+                self._close_idle_changeset(cs, started, last, paths)
 
     def _settle(self, path: str) -> None:
         h = self._snapshot(path)

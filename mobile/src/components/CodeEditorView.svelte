@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { gotoLine, openSearchPanel } from "@codemirror/search";
-  import { redo, selectAll, toggleComment, undo } from "@codemirror/commands";
+  import { gotoLine } from "@codemirror/search";
+  import { toggleComment } from "@codemirror/commands";
   import { keymap } from "@codemirror/view";
   import type { Text } from "@codemirror/state";
-  import { EditorState, EditorView, baseExtensions, languageFor, languageSlot, readOnlySlot } from "@state/codemirror";
+  import { createEditorBridge, EditorState, EditorView, baseExtensions, languageFor, languageSlot, readOnlySlot } from "@state/codemirror";
   import { editors, type FileTab } from "@state/editors.svelte";
   import { cursor } from "@state/cursor.svelte";
   import { ui } from "@state/ui.svelte";
@@ -43,51 +43,11 @@
     view = new EditorView({ state, parent: host });
     savedDoc = state.doc;
     void languageFor(tab.path).then((lang) => { if (lang && view) view.dispatch({ effects: languageSlot.reconfigure(lang) }); });
-    editors.register(tab, {
-      exec: (cmd) => {
-        const v = view;
-        if (!v) return;
-        v.focus();
-        if (cmd === "undo") undo(v);
-        else if (cmd === "redo") redo(v);
-        else if (cmd === "selectAll") selectAll(v);
-        else if (cmd === "toggleComment") toggleComment(v);
-        else if (cmd === "gotoLine") gotoLine(v);
-        else if (cmd === "find" || cmd === "replace") openSearchPanel(v);
-        else if (cmd === "copy" || cmd === "cut") {
-          const sel = v.state.sliceDoc(v.state.selection.main.from, v.state.selection.main.to);
-          if (sel) {
-            void navigator.clipboard.writeText(sel);
-            if (cmd === "cut") v.dispatch(v.state.replaceSelection(""));
-          }
-        } else if (cmd === "paste") {
-          navigator.clipboard.readText()
-            .then((t) => v.dispatch(v.state.replaceSelection(t)))
-            .catch(() => ui.toast("Use keyboard paste", "error"));
-        }
-      },
-      getText: () => view!.state.doc.toString(),
-      setText: (text, keepCursor) => {
-        if (!view) return;
-        const sel = view.state.selection.main.head;
-        view.dispatch({
-          changes: { from: 0, to: view.state.doc.length, insert: text },
-          selection: keepCursor ? { anchor: Math.min(sel, text.length) } : undefined,
-        });
-      },
-      markSaved: () => { if (view) savedDoc = view.state.doc; },
-      goTo: (line, col = 0, length = 0) => {
-        if (!view) return;
-        const l = view.state.doc.line(Math.max(1, Math.min(line, view.state.doc.lines)));
-        const from = Math.min(l.from + col, l.to);
-        view.dispatch({
-          selection: { anchor: from, head: Math.min(from + length, l.to) },
-          scrollIntoView: true,
-          effects: EditorView.scrollIntoView(from, { y: "center" }),
-        });
-      },
-      focus: () => view?.focus(),
-    });
+    editors.register(tab, createEditorBridge({
+      getView: () => view,
+      setSavedDoc: (d) => { savedDoc = d; },
+      onPasteError: () => ui.toast("Use keyboard paste", "error"),
+    }));
     if (active) cursor.set(tab.path, 1, 1, 1, 0);
   }
 

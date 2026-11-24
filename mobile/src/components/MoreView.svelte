@@ -75,6 +75,15 @@
           <div class="faint">Sign out while keeping open tabs</div>
         </div>
       </button>
+
+      <details class="guide-box">
+        <summary>Quick Guide: How VibeBuilder Works</summary>
+        <ul>
+          <li><b>Persistent AI Terminals:</b> <code>claude</code>, <code>agy</code>, and <code>shell</code> run inside your desktop builder container and stay alive when your phone locks.</li>
+          <li><b>Changes &amp; Checkpoints:</b> Every agent edit is grouped into a Changeset in <b>Changes</b> so you can diff or restore files, and checkpoints commit safely to <code>checkpoints/&lt;branch&gt;</code>.</li>
+          <li><b>Ports &amp; Screen Preview:</b> Forward builder dev servers or run GUI apps with live screen interaction directly from <b>Terminal</b> or <b>Ports &amp; Preview</b>.</li>
+        </ul>
+      </details>
     </div>
   {:else}
     <div class="bar">
@@ -106,4 +115,8 @@
   .card b { display: block; font-size: 14.5px; }
   .card .faint { font-size: 12.5px; margin-top: 2px; }
   .warn { color: var(--warn); }
+  .guide-box { border-radius: 12px; border: 1px solid var(--line); background: var(--panel); padding: 12px 14px; font-size: 12.5px; color: var(--dim); }
+  .guide-box summary { cursor: pointer; font-weight: 600; color: var(--text); }
+  .guide-box ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 6px; }
+  .guide-box code { font-family: var(--mono); background: #0e1015; padding: 1px 4px; border-radius: 4px; color: var(--text); }
 </style>

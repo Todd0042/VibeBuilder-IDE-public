@@ -5,6 +5,15 @@ import type { LiveEvent } from "./types";
 
 const SIGNED_OUT = 4401;
 
+function parseJson(raw: string): any | null {
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    console.debug("Ignoring malformed WebSocket JSON frame:", err);
+    return null;
+  }
+}
+
 export class LiveSocket {
   private ws: WebSocket | null = null;
   private stopped = false;
@@ -31,8 +40,8 @@ export class LiveSocket {
     this.ws = ws;
     ws.onopen = () => ws.send(JSON.stringify({ type: "auth", session: this.api.session }));
     ws.onmessage = (m) => {
-      let e: LiveEvent;
-      try { e = JSON.parse(m.data); } catch { return; }
+      const e = parseJson(m.data) as LiveEvent | null;
+      if (!e) return;
       if (e.event === "hello") {
         this.retry = 500;
         this.setConnected(true);
@@ -106,8 +115,8 @@ export class PtySocket {
         this.h.onData(new Uint8Array(m.data));
         return;
       }
-      let ev: any;
-      try { ev = JSON.parse(m.data); } catch { return; }
+      const ev = parseJson(m.data);
+      if (!ev) return;
       if (ev.type === "ready") {
         if (reconnect) this.onReconnect();
         this.ready = true;
@@ -187,8 +196,8 @@ export class PreviewSocket {
         this.h.onFrame(new Blob([m.data], { type: "image/jpeg" }));
         return;
       }
-      let ev: any;
-      try { ev = JSON.parse(m.data); } catch { return; }
+      const ev = parseJson(m.data);
+      if (!ev) return;
       if (ev.type === "ready") {
         this.ready = true;
         this.retry = 1000;

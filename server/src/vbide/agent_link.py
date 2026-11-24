@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import stat
 from typing import Any
@@ -25,6 +26,7 @@ from .auth.routes import SessionDep, ws_session
 from .jail import JailError, clean_rel
 from .services import services
 
+log = logging.getLogger("vbide.agent_link")
 router = APIRouter(prefix="/api/v1", tags=["terminals"])
 
 KINDS = ("claude", "agy", "shell", "run")
@@ -69,6 +71,29 @@ class AgentLink:
             raise HTTPException(r.status_code if r.status_code < 500 else 502, str(detail or "Builder error")[:300])
         return data
 
+    def _attribute_from_hooks(self, a: dict, paths: list[str]) -> str | None:
+        hooked = a.get("hook_edits")
+        if not isinstance(hooked, dict):
+            return None
+        for kind in ("claude", "agy"):
+            files = hooked.get(kind) or []
+            if isinstance(files, list) and any(isinstance(f, str) and f in paths for f in files):
+                return kind
+        return None
+
+    def _attribute_from_output(self, a: dict) -> str:
+        busy = a.get("output_bytes")
+        if not isinstance(busy, dict):
+            return "unknown"
+        scores = {k: int(v) for k, v in busy.items() if k in KINDS and isinstance(v, (int, float)) and v > 0}
+        if not scores:
+            return "unknown"
+        peak = max(scores.values())
+        for kind in ("claude", "agy"):
+            if scores.get(kind, 0) >= peak * 0.25:
+                return kind
+        return max(scores, key=scores.get)
+
     def attribute(self, started: float, ended: float, paths: list[str]) -> str:
         """Who made a change set (called from the recorder thread). Claude's edit hook names files
         exactly; otherwise it's the terminal that was busy while the files changed."""
@@ -76,26 +101,12 @@ class AgentLink:
             r = httpx.get(self.http_base + "/activity", params={"since": started - 15, "until": ended + 1},
                           headers=self._headers, timeout=3)
             a = r.json()
-        except Exception:
+        except Exception as exc:
+            log.debug("Activity attribution failed: %s", exc)
             return "unknown"
         if not isinstance(a, dict):
             return "unknown"
-        hooked = a.get("hook_edits") or {}
-        if isinstance(hooked, dict):
-            for kind in ("claude", "agy"):
-                files = hooked.get(kind) or []
-                if isinstance(files, list) and any(isinstance(f, str) and f in paths for f in files):
-                    return kind
-        busy = a.get("output_bytes") or {}
-        if not isinstance(busy, dict):
-            return "unknown"
-        scores = {k: int(v) for k, v in busy.items() if k in KINDS and isinstance(v, (int, float)) and v > 0}
-        if not scores:
-            return "unknown"
-        for kind in ("claude", "agy"):  # an agent at work beats a shell that printed something
-            if scores.get(kind, 0) >= max(scores.values()) * 0.25:
-                return kind
-        return max(scores, key=scores.get)
+        return self._attribute_from_hooks(a, paths) or self._attribute_from_output(a)
 
 
 # ---- terminals ----------------------------------------------------------------------------
@@ -212,14 +223,14 @@ async def pty(ws: WebSocket, tid: str) -> None:
             done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             for t in pending:
                 t.cancel()
-    except (WebSocketDisconnect, websockets.ConnectionClosed, OSError, websockets.InvalidStatus):
-        pass
+    except (WebSocketDisconnect, websockets.ConnectionClosed, OSError, websockets.InvalidStatus) as exc:
+        log.debug("PTY proxy closed for %s: %s", tid, exc)
     finally:
         remove()
         try:
             await ws.close(code=4401 if ended.is_set() else 1000)
-        except RuntimeError:
-            pass
+        except RuntimeError as exc:
+            log.debug("PTY proxy ws.close ignored for %s: %s", tid, exc)
 
 
 @router.websocket("/preview/{tid}")
@@ -264,18 +275,32 @@ async def preview(ws: WebSocket, tid: str) -> None:
             done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             for t in pending:
                 t.cancel()
-    except (WebSocketDisconnect, websockets.ConnectionClosed, OSError, websockets.InvalidStatus):
-        pass
+    except (WebSocketDisconnect, websockets.ConnectionClosed, OSError, websockets.InvalidStatus) as exc:
+        log.debug("PTY proxy closed for %s: %s", tid, exc)
     finally:
         remove()
         try:
             await ws.close(code=4401 if ended.is_set() else 1000)
-        except RuntimeError:
-            pass
+        except RuntimeError as exc:
+            log.debug("PTY proxy ws.close ignored for %s: %s", tid, exc)
 
 
 # ---- git ----------------------------------------------------------------------------------
 _XY = re.compile(r"^[ .MADRCU?!T]{2}$")
+
+
+def _clean_git_files(raw_files: list) -> list[dict]:
+    files = []
+    for f in raw_files[:5000]:
+        if not (isinstance(f, dict) and isinstance(f.get("path"), str) and isinstance(f.get("xy"), str)):
+            continue
+        if not _XY.match(f["xy"]):
+            continue
+        try:
+            files.append({"path": clean_rel(f["path"]), "xy": f["xy"]})
+        except JailError as exc:
+            log.debug("Skipping unsafe git status path %r: %s", f.get("path"), exc)
+    return files
 
 
 @router.get("/git/status")
@@ -291,16 +316,10 @@ async def git_status(project: str, _: SessionDep, request: Request) -> dict:
     if not isinstance(data, dict) or not data.get("repo"):
         err = data.get("error") if isinstance(data, dict) else None
         return {"repo": False, "error": str(err)[:500]} if err else {"repo": False}
-    files = []
-    for f in (data.get("files") or [])[:5000]:
-        if isinstance(f, dict) and isinstance(f.get("path"), str) and isinstance(f.get("xy"), str) and _XY.match(f["xy"]):
-            try:
-                files.append({"path": clean_rel(f["path"]), "xy": f["xy"]})
-            except JailError:
-                continue
     try:
         root = clean_rel(str(data.get("root") or ""))
-    except JailError:
+    except JailError as exc:
+        log.debug("Invalid git root returned by builder: %s", exc)
         return {"repo": False}
     return {"repo": True, "root": root, "branch": str(data.get("branch") or "")[:200], "ahead": int(data.get("ahead") or 0),
-            "behind": int(data.get("behind") or 0), "files": files}
+            "behind": int(data.get("behind") or 0), "files": _clean_git_files(data.get("files") or [])}

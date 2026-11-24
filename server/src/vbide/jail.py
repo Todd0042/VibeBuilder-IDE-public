@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ctypes
 import errno
+import logging
 import os
 import posixpath
 import secrets
@@ -181,8 +182,8 @@ class Jail:
         except BaseException:
             try:
                 os.unlink(tmp, dir_fd=pfd)
-            except OSError:
-                pass
+            except OSError as exc:
+                logging.getLogger("vbide.jail").debug("Temp file cleanup ignored for %s: %s", tmp, exc)
             raise
         finally:
             os.close(pfd)

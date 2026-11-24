@@ -19,78 +19,18 @@
   import { changes } from "../lib/changes.svelte";
   import { terminals } from "../lib/terminals.svelte";
   import { checkpoints } from "../lib/checkpoints.svelte";
-  import { problems } from "../lib/problems.svelte";
   import { focusIn, keyName, restoreZoom, runShortcut } from "../lib/commands";
-
-  async function loadProjects() {
-    try {
-      const r = await session.api.projects();
-      ui.projects = r.projects;
-      ui.hiddenFolders = r.hidden ?? [];
-      if (!ui.workspaceOpen && !ui.projects.includes(ui.project)) {
-        // a nested folder from Open Folder: keep it if it still exists
-        let ok = false;
-        if (ui.project.includes("/")) {
-          try { await session.api.list(ui.project, true); ok = true; } catch { ok = false; }
-        }
-        if (!ok) {
-          ui.recentFolders = ui.recentFolders.filter((p) => p !== ui.project);
-          if (ui.projects[0]) ui.project = ui.projects[0];
-          else ui.workspaceOpen = true;
-        }
-      }
-    } catch (e) {
-      ui.error(e, "Couldn't load projects");
-    }
-  }
-
-  async function refreshAll() {
-    await loadProjects();
-    if (ui.workspaceOpen) {
-      if (!tree.children[""]) await tree.load("");
-      else for (const d of Object.keys(tree.children)) void tree.load(d, true);
-      void tree.refreshGit();
-    } else if (ui.project) {
-      if (!tree.children[ui.project]) await tree.load(ui.project);
-      else for (const d of Object.keys(tree.children)) void tree.load(d, true);
-      tree.expanded[ui.project] = true;
-      void tree.refreshGit();
-    }
-    void changes.reload();
-    void checkpoints.load();
-    void problems.load();
-    void terminals.refresh();
-    // anything that changed while locked
-    void editors.onDiskChange(editors.tabs.filter((t) => t.kind === "file").map((t) => (t as { path: string }).path));
-  }
+  import { refreshWorkspace, subscribeWorkspaceLive } from "@state/workbench";
 
   onMount(() => {
-    const off = session.onLive((e) => {
-      if (e.event === "fs") {
-        tree.onDiskChange(e.paths);
-        void editors.onDiskChange(e.paths);
-        if (e.paths.some((p) => !p.includes("/"))) void loadProjects();
-      } else if (e.event === "changeset") {
-        changes.onClosed(e);
-        tree.scheduleGit(100);
-      } else if (e.event === "changeset.open") {
-        changes.onOpened(e.id, e.started);
-      } else if (e.event === "terminals") {
-        void terminals.refresh();
-      } else if (e.event === "problem") {
-        problems.onProblem(e);
-      } else if (e.event === "checkpoint") {
-        checkpoints.onCheckpoint(e);
-        tree.scheduleGit(100);
-      }
-    });
+    const off = subscribeWorkspaceLive();
     const offOut = session.onSignedOut(() => terminals.disconnectAll());
     return () => { off(); offOut(); };
   });
 
   // Each time you sign in (first time, or after a lock): reload what's on screen.
   $effect(() => {
-    if (session.phase === "ready") void refreshAll();
+    if (session.phase === "ready") void refreshWorkspace();
     else terminals.disconnectAll();
   });
 

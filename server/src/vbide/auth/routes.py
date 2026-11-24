@@ -68,7 +68,8 @@ async def ws_session(ws: WebSocket) -> Session | None:
     try:
         first = json.loads(await asyncio.wait_for(ws.receive_text(), 5))
         s = svc.sessions.get(str(first.get("session", ""))) if first.get("type") == "auth" else None
-    except Exception:
+    except Exception as exc:
+        logging.getLogger("vbide.auth").debug("WebSocket auth failed: %s", exc)
         s = None
     if not s or not svc.devices.exists(s.device_id):
         await ws.close(code=4401)

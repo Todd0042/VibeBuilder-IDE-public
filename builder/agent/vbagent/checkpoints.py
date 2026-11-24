@@ -15,6 +15,7 @@ if that fails, a plain summary is used.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import subprocess
@@ -23,6 +24,8 @@ import threading
 from pathlib import Path, PurePosixPath
 
 from .terminals import WORKSPACE
+
+log = logging.getLogger("vbagent.checkpoints")
 
 PREFIX = "checkpoints/"
 MAX_NEW_FILE = 5 * 1024 * 1024
@@ -72,6 +75,14 @@ def checkpoint_repo(root: Path, who: list[str]) -> dict:
 
 
 # ---- the work ----------------------------------------------------------------------------------
+def _resolve_parent_commit(root: Path, head: str | None, ref: str) -> tuple[str | None, str | None]:
+    prev = _git(root, "rev-parse", "-q", "--verify", f"{ref}^{{commit}}", check=False).strip() or None
+    parent = head
+    if prev and (head is None or _git(root, "merge-base", "--is-ancestor", head, prev, check=False, rc=True) == 0):
+        parent = prev
+    return parent, prev
+
+
 def _checkpoint(root: Path, who: list[str]) -> dict:
     git_dir = Path(_git(root, "rev-parse", "--absolute-git-dir").strip())
     for busy in ("MERGE_HEAD", "rebase-merge", "rebase-apply", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG"):
@@ -84,12 +95,7 @@ def _checkpoint(root: Path, who: list[str]) -> dict:
         raise Skip("on a checkpoint branch")
     head = _git(root, "rev-parse", "-q", "--verify", "HEAD^{commit}", check=False).strip() or None
     ref = f"refs/heads/{PREFIX}{branch}"
-    prev = _git(root, "rev-parse", "-q", "--verify", f"{ref}^{{commit}}", check=False).strip() or None
-
-    # Roll: follow the previous checkpoint while it still sits on top of the branch, else start again.
-    parent = head
-    if prev and (head is None or _git(root, "merge-base", "--is-ancestor", head, prev, check=False, rc=True) == 0):
-        parent = prev
+    parent, prev = _resolve_parent_commit(root, head, ref)
 
     with tempfile.TemporaryDirectory(prefix="vb-ckpt-") as tmp:
         env = {"GIT_INDEX_FILE": str(Path(tmp) / "index")}
@@ -116,6 +122,24 @@ def _checkpoint(root: Path, who: list[str]) -> dict:
             "rolled": parent == head and prev is not None}
 
 
+def _unsafe_reason(root: Path, head: str | None, path: str, max_new_file: int) -> str:
+    if SECRET_NAME.search(path):
+        return "looks like a secrets file"
+    f = root / path
+    try:
+        if not f.is_file() or f.is_symlink():
+            return ""
+        size = f.stat().st_size
+        tracked = bool(head and _git(root, "cat-file", "-e", f"{head}:{path}", check=False, rc=True) == 0)
+        if size > max_new_file and not tracked:
+            return f"new file over {max_new_file // (1024 * 1024)} MB"
+        if size <= 2 * 1024 * 1024 and SECRET_TEXT.search(f.read_bytes()):
+            return "contains something that looks like a secret"
+    except OSError as exc:
+        log.debug("Skipping unreadable checkpoint candidate %s: %s", path, exc)
+    return ""
+
+
 def _drop_unsafe(root: Path, head: str | None, env: dict) -> list[dict]:
     """Take secrets and oversized new files back out of the checkpoint's index."""
     if os.environ.get("VB_CHECKPOINT_ALLOW_ALL", "").strip() == "1":
@@ -125,27 +149,14 @@ def _drop_unsafe(root: Path, head: str | None, env: dict) -> list[dict]:
                    head or _empty_tree(root), env=env).split("\0")
     left_out = []
     for path in filter(None, changed):
-        reason = ""
-        if SECRET_NAME.search(path):
-            reason = "looks like a secrets file"
+        reason = _unsafe_reason(root, head, path, max_new_file)
+        if not reason:
+            continue
+        if head and _git(root, "cat-file", "-e", f"{head}:{path}", check=False, rc=True) == 0:
+            _git(root, "reset", "-q", head, "--", path, env=env)
         else:
-            f = root / path
-            try:
-                if f.is_file() and not f.is_symlink():
-                    size = f.stat().st_size
-                    tracked = head and _git(root, "cat-file", "-e", f"{head}:{path}", check=False, rc=True) == 0
-                    if size > max_new_file and not tracked:
-                        reason = f"new file over {max_new_file // (1024 * 1024)} MB"
-                    elif size <= 2 * 1024 * 1024 and SECRET_TEXT.search(f.read_bytes()):
-                        reason = "contains something that looks like a secret"
-            except OSError:
-                continue
-        if reason:
-            if head and _git(root, "cat-file", "-e", f"{head}:{path}", check=False, rc=True) == 0:
-                _git(root, "reset", "-q", head, "--", path, env=env)  # keep its committed state
-            else:
-                _git(root, "rm", "-q", "--cached", "--", path, env=env)
-            left_out.append({"path": path, "reason": reason})
+            _git(root, "rm", "-q", "--cached", "--", path, env=env)
+        left_out.append({"path": path, "reason": reason})
     return left_out[:50]
 
 
@@ -223,7 +234,8 @@ def _repo_root(folder: str) -> Path | None:
     try:
         top = subprocess.run(["git", "-C", str(p), "rev-parse", "--show-toplevel"], capture_output=True, text=True,
                              timeout=10, check=True).stdout.strip()
-    except (subprocess.SubprocessError, OSError):
+    except (subprocess.SubprocessError, OSError) as exc:
+        log.debug("Not a git repo for %s: %s", folder, exc)
         return None
     root = Path(top).resolve()
     return root if root == ws or ws in root.parents else None

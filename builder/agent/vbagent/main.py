@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -29,6 +30,7 @@ from .checkpoints import checkpoint_folders
 from .terminals import WORKSPACE, Terminals
 from .tunnels import Tunnels, listening_ports
 
+log = logging.getLogger("vbagent.main")
 TOKEN = Path(os.environ.get("VB_AGENT_TOKEN_FILE", "/run/vb-link/agent_token")).read_text().strip()
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 terms = Terminals()
@@ -162,8 +164,8 @@ async def preview(ws: WebSocket, tid: str) -> None:
                             env={**os.environ, "DISPLAY": disp}, timeout=1,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                         )
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.debug("Ignoring invalid preview input frame: %s", exc)
                 snap_event.set()
             elif mtype == "refresh":
                 snap_event.set()
@@ -173,8 +175,8 @@ async def preview(ws: WebSocket, tid: str) -> None:
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for p in pending:
             p.cancel()
-    except (WebSocketDisconnect, Exception):
-        pass
+    except (WebSocketDisconnect, Exception) as exc:
+        log.debug("Preview websocket closed for %s: %s", tid, exc)
 
 
 @app.websocket("/pty/{tid}")
@@ -222,8 +224,8 @@ async def pty(ws: WebSocket, tid: str) -> None:
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for p in pending:
             p.cancel()
-    except (WebSocketDisconnect, ValueError, KeyError, RuntimeError):
-        pass
+    except (WebSocketDisconnect, ValueError, KeyError, RuntimeError) as exc:
+        log.debug("PTY websocket closed for %s: %s", tid, exc)
     finally:
         t.watchers.discard(q)
 
@@ -280,6 +282,32 @@ def hook(body: Hook) -> dict:
     return {"ok": True}
 
 
+def _parse_git_status_output(out: bytes) -> tuple[str, int, int, list[dict]]:
+    branch, ahead, behind, files = "", 0, 0, []
+    items = out.split(b"\0")
+    i = 0
+    while i < len(items):
+        line = items[i].decode(errors="replace")
+        i += 1
+        if line.startswith("# branch.head "):
+            branch = line[14:]
+        elif line.startswith("# branch.ab "):
+            a, b = line[12:].split()
+            ahead, behind = int(a), -int(b)
+        elif line[:2] in ("1 ", "u "):
+            parts = line.split(" ", 10 if line[0] == "u" else 8)
+            files.append({"xy": parts[1], "path": parts[-1]})
+        elif line.startswith("2 "):
+            parts = line.split(" ", 9)
+            files.append({"xy": parts[1], "path": parts[-1]})
+            i += 1
+        elif line.startswith("? "):
+            files.append({"xy": "??", "path": line[2:]})
+        if len(files) >= 5000:
+            break
+    return branch, ahead, behind, files
+
+
 @app.get("/git/status")
 def git_status(project: str) -> dict:
     """Status of the repo containing `project` (any folder in the workspace). Paths are relative to
@@ -307,28 +335,7 @@ def git_status(project: str) -> dict:
         return {"repo": False, "error": "git didn't answer within 15 seconds (a very large repo, or a hung git process?)"}
     except OSError as exc:
         return {"repo": False, "error": f"couldn't run git: {exc}"}
-    branch, ahead, behind, files = "", 0, 0, []
-    items = out.split(b"\0")
-    i = 0
-    while i < len(items):
-        line = items[i].decode(errors="replace")
-        i += 1
-        if line.startswith("# branch.head "):
-            branch = line[14:]
-        elif line.startswith("# branch.ab "):
-            a, b = line[12:].split()
-            ahead, behind = int(a), -int(b)
-        elif line[:2] in ("1 ", "u "):
-            parts = line.split(" ", 10 if line[0] == "u" else 8)
-            files.append({"xy": parts[1], "path": parts[-1]})
-        elif line.startswith("2 "):
-            parts = line.split(" ", 9)
-            files.append({"xy": parts[1], "path": parts[-1]})
-            i += 1  # the original path follows
-        elif line.startswith("? "):
-            files.append({"xy": "??", "path": line[2:]})
-        if len(files) >= 5000:
-            break
+    branch, ahead, behind, files = _parse_git_status_output(out)
     return {"repo": True, "root": str(root.relative_to(ws)) if root != ws else "", "branch": branch, "ahead": ahead,
             "behind": behind, "files": files}
 

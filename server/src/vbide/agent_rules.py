@@ -74,7 +74,8 @@ def _exists(svc, rel: str) -> bool:
     try:
         svc.jail.stat(rel)
         return True
-    except JailError:
+    except JailError as exc:
+        logging.getLogger("vbide.agent_rules").debug("Agent rule file absent (%s): %s", rel, exc)
         return False
 
 
@@ -89,8 +90,8 @@ def _given(path) -> set[str]:
         logging.getLogger("vbide.agent_rules").warning("Unreadable %s (%s); kept as %s.unreadable", path, exc, path.name)
         try:
             os.replace(path, path.with_name(path.name + ".unreadable"))
-        except OSError:
-            pass  # reading failed too; the warning above already says so
+        except OSError as move_exc:
+            logging.getLogger("vbide.agent_rules").debug("Could not move %s aside: %s", path, move_exc)
         return set()
 
 

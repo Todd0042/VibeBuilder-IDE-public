@@ -144,10 +144,78 @@ async def usage(_: SessionDep, request: Request) -> dict:
     return await run_in_threadpool(services(request).history.usage)
 
 
+class PruneBody(BaseModel):
+    cap_gb: float | None = Field(default=None, ge=0.0, le=500.0)
+
+
+@router.post("/prune")
+async def prune(body: PruneBody, _: SessionDep, request: Request) -> dict:
+    svc = services(request)
+
+    def run() -> dict:
+        if body.cap_gb is not None:
+            freed = svc.history.set_cap(int(body.cap_gb * 1024 * 1024 * 1024))
+        else:
+            freed = svc.history.enforce_cap()
+        return {"freed_bytes": freed, "usage": svc.history.usage()}
+
+    return await run_in_threadpool(run)
+
+
 class RestoreBody(BaseModel):
     changeset: int | None = None  # put every file of this change set back as it was before it
     path: str | None = Field(default=None, max_length=4096)  # or: one file ...
     state: str | None = Field(default=None, max_length=80)  # ... to this version hash ("" = delete it)
+
+
+def _resolve_restore_targets(svc: Services, body: RestoreBody) -> tuple[list[tuple[str, str | None]], str]:
+    if body.changeset is not None:
+        if not svc.history.changeset(body.changeset):
+            raise HTTPException(404, "No such change set")
+        return [(p, b) for p, b, _a in svc.history.changeset_files(body.changeset)], f"Undo of change set #{body.changeset}"
+    if body.path is not None and body.state is not None:
+        if body.state and not _HASH.match(body.state):
+            raise HTTPException(400, "Bad version")
+        try:
+            rel = clean_rel(body.path)
+        except JailError as exc:
+            raise HTTPException(400, str(exc))
+        return [(rel, body.state or None)], f"Restored {rel}"
+    raise HTTPException(400, "Say what to restore")
+
+
+def _build_restore_plan(svc: Services, targets: list[tuple[str, str | None]]) -> list[tuple[str, str | None, bytes | None]]:
+    plan: list[tuple[str, str | None, bytes | None]] = []
+    for path, state in targets:
+        if state and state.startswith(BINARY_PREFIX):
+            raise HTTPException(409, f"{path} was a binary file; its content isn't kept")
+        data = None if state is None else svc.history.get_blob(state)
+        if state is not None and data is None:
+            raise HTTPException(409, f"The old version of {path} is no longer stored")
+        plan.append((path, state, data))
+    return plan
+
+
+def _apply_restore_plan(svc: Services, plan: list[tuple[str, str | None, bytes | None]], label: str) -> tuple[int, list[str]]:
+    cs = svc.history.open_changeset("restore", label)
+    done: list[str] = []
+    try:
+        for path, state, data in plan:
+            if data is None:
+                try:
+                    svc.jail.delete(path)
+                except JailError as exc:
+                    if exc.status != 404:
+                        raise
+            else:
+                svc.jail.write_file(path, data)
+            svc.history.record(path, state, "restore", cs)
+            done.append(path)
+    except JailError as exc:
+        raise HTTPException(exc.status, f"Restored {len(done)} of {len(plan)} files, then: {exc}")
+    finally:
+        svc.history.close_changeset(cs, "restore")
+    return cs, done
 
 
 @router.post("/restore")
@@ -155,50 +223,9 @@ async def restore(body: RestoreBody, _: SessionDep, request: Request) -> dict:
     svc = services(request)
 
     def run() -> dict:
-        if body.changeset is not None:
-            if not svc.history.changeset(body.changeset):
-                raise HTTPException(404, "No such change set")
-            targets = [(p, b) for p, b, _a in svc.history.changeset_files(body.changeset)]
-            label = f"Undo of change set #{body.changeset}"
-        elif body.path is not None and body.state is not None:
-            if body.state and not _HASH.match(body.state):
-                raise HTTPException(400, "Bad version")
-            try:
-                targets = [(clean_rel(body.path), body.state or None)]
-            except JailError as exc:
-                raise HTTPException(400, str(exc))
-            label = f"Restored {targets[0][0]}"
-        else:
-            raise HTTPException(400, "Say what to restore")
-
-        # Check everything first, so a restore doesn't stop half way.
-        plan = []
-        for path, state in targets:
-            if state and state.startswith(BINARY_PREFIX):
-                raise HTTPException(409, f"{path} was a binary file; its content isn't kept")
-            data = None if state is None else svc.history.get_blob(state)
-            if state is not None and data is None:
-                raise HTTPException(409, f"The old version of {path} is no longer stored")
-            plan.append((path, state, data))
-
-        cs = svc.history.open_changeset("restore", label)
-        done = []
-        try:
-            for path, state, data in plan:
-                if data is None:
-                    try:
-                        svc.jail.delete(path)
-                    except JailError as exc:
-                        if exc.status != 404:
-                            raise
-                else:
-                    svc.jail.write_file(path, data)
-                svc.history.record(path, state, "restore", cs)
-                done.append(path)
-        except JailError as exc:
-            raise HTTPException(exc.status, f"Restored {len(done)} of {len(plan)} files, then: {exc}")
-        finally:
-            svc.history.close_changeset(cs, "restore")
+        targets, label = _resolve_restore_targets(svc, body)
+        plan = _build_restore_plan(svc, targets)
+        cs, done = _apply_restore_plan(svc, plan, label)
         svc.live.publish("changeset", {**(svc.history.changeset(cs) or {"id": cs}), "file_count": len(done)})
         return {"changeset": cs, "restored": done}
 

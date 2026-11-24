@@ -17,6 +17,7 @@ changing lose their history first (their current version is always kept, as the 
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import sqlite3
 import threading
@@ -103,7 +104,8 @@ class HistoryStore:
             return None
         try:
             return zstd.decompress(self._blob_path(h).read_bytes())
-        except (FileNotFoundError, zstd.ZstdError):
+        except (FileNotFoundError, zstd.ZstdError) as exc:
+            logging.getLogger("vbide.history.store").debug("Blob unavailable for %s: %s", h, exc)
             return None
 
     # ---- files -----------------------------------------------------------------------------
@@ -221,12 +223,18 @@ class HistoryStore:
         return {"stored_bytes": stored, "raw_bytes": raw, "blobs": n, "versions": versions, "cap_bytes": self.cap_bytes}
 
     # ---- the rolling cap -------------------------------------------------------------------
-    def enforce_cap(self) -> int:
+    def set_cap(self, cap_bytes: int) -> int:
+        with self._lock:
+            self.cap_bytes = max(0, int(cap_bytes))
+            return self.enforce_cap()
+
+    def enforce_cap(self, max_bytes: int | None = None) -> int:
         """Drop history of the longest-unchanged files until stored content fits. Returns bytes freed."""
+        limit = self.cap_bytes if max_bytes is None else max(0, int(max_bytes))
         freed = 0
         with self._lock:
             db = self._db()
-            while self.usage()["stored_bytes"] > self.cap_bytes:
+            while self.usage()["stored_bytes"] > limit:
                 row = db.execute("SELECT f.path FROM files f WHERE EXISTS (SELECT 1 FROM versions v WHERE v.path=f.path) "
                                  "ORDER BY f.changed ASC LIMIT 1").fetchone()
                 if not row:

@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import sqlite3
@@ -122,7 +123,8 @@ class DeviceStore:
         with self._lock:
             try:
                 cur = json.loads(self._pair_file.read_text())
-            except (FileNotFoundError, ValueError):
+            except (FileNotFoundError, ValueError) as exc:
+                logging.getLogger("vbide.auth").debug("Pair file unreadable: %s", exc)
                 return None
             if time.time() > float(cur.get("expires", 0)) or not hmac.compare_digest(str(cur.get("hash")), _h(code)):
                 return None

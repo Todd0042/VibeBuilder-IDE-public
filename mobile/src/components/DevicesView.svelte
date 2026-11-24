@@ -10,6 +10,8 @@
   let max = $state(3);
   let usageError = $state("");
   let usage = $state<{ stored_bytes: number; cap_bytes: number; versions: number } | null>(null);
+  let capGb = $state(10);
+  let pruning = $state(false);
 
   async function load() {
     try {
@@ -19,8 +21,22 @@
     } catch (e) { ui.error(e); }
     try {
       usage = await session.api.historyUsage();
+      capGb = Math.max(1, Math.round(usage.cap_bytes / 1024 ** 3));
       usageError = "";
     } catch (e) { usageError = e instanceof Error ? e.message : String(e); }
+  }
+
+  async function pruneNow() {
+    pruning = true;
+    try {
+      const res = await session.api.pruneHistory(capGb);
+      usage = res.usage;
+      ui.toast(`History cap set to ${capGb} GB`);
+    } catch (e) {
+      ui.error(e, "Couldn't prune history");
+    } finally {
+      pruning = false;
+    }
   }
 
   async function revoke(d: DeviceInfo) {
@@ -82,6 +98,14 @@
     <h4>Change history</h4>
     <div class="meter"><div style:width="{Math.min(100, (usage.stored_bytes / usage.cap_bytes) * 100)}%"></div></div>
     <p class="faint small">{gb(usage.stored_bytes)} GB of {gb(usage.cap_bytes)} GB · {usage.versions} versions</p>
+    <div class="cap-row">
+      <select class="field small" bind:value={capGb} aria-label="History storage cap">
+        {#each [2, 5, 10, 25] as g}
+          <option value={g}>{g} GB cap</option>
+        {/each}
+      </select>
+      <button class="btn small" disabled={pruning} onclick={pruneNow}>{pruning ? "Pruning…" : "Apply & Prune"}</button>
+    </div>
   {/if}
 </div>
 
@@ -96,6 +120,7 @@
   .toggle { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
   .meter { height: 8px; border-radius: 4px; background: #262b35; overflow: hidden; }
   .meter div { height: 100%; background: var(--accent-2); }
+  .cap-row { display: flex; gap: 8px; align-items: center; }
   .problem { border: 1px solid var(--warn); border-radius: 8px; padding: 10px; display: grid; gap: 6px; }
   .problem code { white-space: pre-wrap; word-break: break-word; }
   code { font-family: var(--mono); font-size: 12px; background: #0e1015; padding: 1px 5px; border-radius: 4px; }

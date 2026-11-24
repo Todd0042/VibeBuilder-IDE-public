@@ -11,6 +11,8 @@
   let max = $state(3);
   let usageError = $state("");
   let usage = $state<{ stored_bytes: number; cap_bytes: number; versions: number } | null>(null);
+  let capGb = $state(10);
+  let pruning = $state(false);
 
   async function load() {
     try {
@@ -22,9 +24,23 @@
     }
     try {
       usage = await session.api.historyUsage();
+      capGb = Math.max(1, Math.round(usage.cap_bytes / 1024 ** 3));
       usageError = "";
     } catch (e) {
       usageError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  async function pruneNow() {
+    pruning = true;
+    try {
+      const res = await session.api.pruneHistory(capGb);
+      usage = res.usage;
+      ui.toast(`History cap set to ${capGb} GB`);
+    } catch (e) {
+      ui.error(e, "Couldn't prune history");
+    } finally {
+      pruning = false;
     }
   }
 
@@ -92,6 +108,14 @@
     <h4>Change history</h4>
     <div class="meter"><div style:width="{Math.min(100, (usage.stored_bytes / usage.cap_bytes) * 100)}%"></div></div>
     <p class="faint small">{gb(usage.stored_bytes)} GB of {gb(usage.cap_bytes)} GB · {usage.versions} versions kept. When full, files that haven't changed for the longest lose their history first.</p>
+    <div class="cap-row">
+      <select class="field small" bind:value={capGb} aria-label="History storage cap">
+        {#each [2, 5, 10, 25] as g}
+          <option value={g}>{g} GB cap</option>
+        {/each}
+      </select>
+      <button class="btn small" disabled={pruning} onclick={pruneNow}>{pruning ? "Pruning…" : "Apply & Prune"}</button>
+    </div>
   {/if}
 
   <h4>Shortcuts</h4>
@@ -119,6 +143,7 @@
   h4 { margin: 10px 0 0; font-size: 12px; color: var(--dim); letter-spacing: .04em; }
   .meter { height: 6px; border-radius: 3px; background: #262b35; overflow: hidden; }
   .meter div { height: 100%; background: var(--accent-2); }
+  .cap-row { display: flex; gap: 8px; align-items: center; }
   .keys { display: grid; grid-template-columns: 1fr; gap: 5px; font-size: 12px; color: var(--dim); }
   code { font-family: var(--mono); font-size: 11.5px; background: #0e1015; padding: 1px 5px; border-radius: 4px; color: var(--text); }
   .toggle { display: flex; align-items: center; gap: 8px; margin: 4px 0; }

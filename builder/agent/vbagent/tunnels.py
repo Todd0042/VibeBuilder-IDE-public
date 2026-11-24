@@ -13,6 +13,7 @@ anywhere else.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 import secrets
@@ -23,6 +24,7 @@ from pathlib import Path
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+log = logging.getLogger("vbagent.tunnels")
 REVERSE_DIR = Path("/tmp/vb-rev")
 LISTENER_ID = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED_PORTS = {7070}  # the agent itself
@@ -49,16 +51,16 @@ async def pipe(ws: WebSocket, reader: asyncio.StreamReader, writer: asyncio.Stre
     tasks = [asyncio.ensure_future(up()), asyncio.ensure_future(down())]
     try:
         await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-    except (WebSocketDisconnect, ConnectionError, RuntimeError):
-        pass
+    except (WebSocketDisconnect, ConnectionError, RuntimeError) as exc:
+        log.debug("Tunnel pipe closed: %s", exc)
     finally:
         for t in tasks:
             t.cancel()
         writer.close()
         try:
             await ws.close()
-        except RuntimeError:
-            pass
+        except RuntimeError as exc:
+            log.debug("Tunnel websocket close ignored: %s", exc)
 
 
 @dataclass
@@ -107,7 +109,8 @@ class Tunnels:
             self.pending[conn] = (reader, writer, time.time())
             try:
                 await sess.send({"type": "conn", "id": lid, "conn": conn})
-            except Exception:
+            except Exception as exc:
+                log.debug("Reverse tunnel accept send failed for %s: %s", lid, exc)
                 self.pending.pop(conn, None)
                 writer.close()
 
@@ -136,8 +139,8 @@ class Tunnels:
             if lst.path:
                 try:
                     os.unlink(lst.path)
-                except OSError:
-                    pass
+                except OSError as exc:
+                    log.debug("Failed unlinking reverse socket %s: %s", lst.path, exc)
 
     async def control(self, ws: WebSocket) -> None:
         await ws.accept()
@@ -153,8 +156,8 @@ class Tunnels:
                     await ws.send_json(await self.listen(sess, str(m.get("id", "")), tcp, bool(m.get("unix"))))
                 elif m.get("type") == "close":
                     self.unlisten(sess, str(m.get("id", "")))
-        except (WebSocketDisconnect, ValueError, RuntimeError):
-            pass
+        except (WebSocketDisconnect, ValueError, RuntimeError) as exc:
+            log.debug("Reverse control websocket closed: %s", exc)
         finally:
             for lid in list(sess.listeners):
                 self.unlisten(sess, lid)

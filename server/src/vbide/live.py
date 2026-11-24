@@ -6,11 +6,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from .auth.routes import ws_session
 
+log = logging.getLogger("vbide.live")
 router = APIRouter(tags=["live"])
 
 
@@ -28,8 +30,8 @@ class LiveHub:
         msg = json.dumps({"event": event, **payload})
         try:
             self._loop.call_soon_threadsafe(self._fanout, msg)
-        except RuntimeError:
-            pass  # loop closed during shutdown
+        except RuntimeError as exc:
+            log.debug("LiveHub publish skipped during shutdown: %s", exc)
 
     def _fanout(self, msg: str) -> None:
         for q in list(self._clients):
@@ -75,12 +77,12 @@ async def live(ws: WebSocket) -> None:
     reader = asyncio.ensure_future(drain())
     try:
         await svc.live.serve(ws, ended)
-    except (WebSocketDisconnect, RuntimeError):
-        pass
+    except (WebSocketDisconnect, RuntimeError) as exc:
+        log.debug("Live websocket closed: %s", exc)
     finally:
         reader.cancel()
         remove()
         try:
             await ws.close(code=4401 if not svc.sessions.get_by_key(s.key) else 1000)
-        except RuntimeError:
-            pass
+        except RuntimeError as exc:
+            log.debug("Live websocket close ignored: %s", exc)

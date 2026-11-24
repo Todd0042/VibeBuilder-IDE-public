@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import fcntl
 import json
+import logging
 import os
 import secrets
 import shutil
@@ -22,6 +23,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
+log = logging.getLogger("vbagent.terminals")
 WORKSPACE = Path(os.environ.get("VB_WORKSPACE", "/workspace"))
 CONFIG = Path.home() / ".config" / "vibebuilder" / "terminals.json"
 SCROLLBACK = 2 * 1024 * 1024
@@ -50,19 +52,20 @@ def _cleanup_xvfb(t: Terminal) -> None:
         try:
             t.xvfb_proc.terminate()
             t.xvfb_proc.wait(timeout=1)
-        except Exception:
+        except Exception as exc:
+            log.debug("Xvfb terminate fallback to kill for terminal %s: %s", t.id, exc)
             try:
                 t.xvfb_proc.kill()
-            except Exception:
-                pass
+            except Exception as kill_exc:
+                log.debug("Xvfb kill ignored for terminal %s: %s", t.id, kill_exc)
         t.xvfb_proc = None
     if t.display is not None:
         sock = f"/tmp/.X11-unix/X{t.display}"
         if os.path.exists(sock):
             try:
                 os.remove(sock)
-            except OSError:
-                pass
+            except OSError as exc:
+                log.debug("Failed removing X11 socket %s: %s", sock, exc)
 
 
 def load_commands() -> dict[str, str]:
@@ -102,6 +105,60 @@ class Terminal:
                 "preview": self.preview, "display": self.display}
 
 
+def _start_xvfb(disp_num: int) -> subprocess.Popen | None:
+    if not shutil.which("Xvfb"):
+        return None
+    try:
+        proc = subprocess.Popen(
+            ["Xvfb", f":{disp_num}", "-screen", "0", "1024x768x24", "-nolisten", "tcp", "+extension", "GLX"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        sock_path = f"/tmp/.X11-unix/X{disp_num}"
+        for _ in range(25):
+            if os.path.exists(sock_path):
+                break
+            time.sleep(0.04)
+        return proc
+    except Exception as exc:
+        log.warning("Failed to start Xvfb on :%s: %s", disp_num, exc)
+        return None
+
+
+def _build_spawn_argv(kind: str, cmd: str, cmds: dict[str, str], waypipe_socket: str, preview: bool) -> list[str]:
+    shell = cmds["shell"]
+    if kind == "run":
+        app = ["bash", "-lc", f"{cmd}; echo; echo \"[exited with code $?]\""]
+        if waypipe_socket and not preview:
+            xwls = ["--xwls"] if shutil.which("xwayland-satellite") else []
+            return ["waypipe", "--socket", waypipe_socket, "--compress", "zstd", *xwls, "server", "--", *app]
+        return app
+    if kind == "shell":
+        return ["bash", "-lc", f"exec {shell} -l"]
+    if cmd.startswith("flags:"):
+        base = cmds[kind].replace("--dangerously-skip-permissions", "").strip()
+        extra = [tok for tok in cmd[6:].split() if tok in AGENT_FLAGS[kind]]
+        launch = f"{base} {' '.join(extra)}".strip()
+    else:
+        launch = cmds[kind]
+    return ["bash", "-lc", f"{launch}; echo; echo '[{kind} exited, here is a shell]'; exec {shell} -l"]
+
+
+def _build_spawn_env(kind: str, preview: bool, disp_num: int | None) -> dict[str, str]:
+    env = {**os.environ, "TERM": "xterm-256color", "COLORTERM": "truecolor", "VB_TERMINAL_KIND": kind,
+           "XDG_RUNTIME_DIR": RUNTIME_DIR}
+    if kind != "run":
+        return env
+    if preview and disp_num is not None:
+        env["DISPLAY"] = f":{disp_num}"
+        env.update({"GDK_BACKEND": "x11", "QT_QPA_PLATFORM": "xcb", "SDL_VIDEODRIVER": "x11",
+                    "WINIT_UNIX_BACKEND": "x11"})
+    else:
+        env.update({"GDK_BACKEND": "wayland", "QT_QPA_PLATFORM": "wayland;xcb", "SDL_VIDEODRIVER": "wayland,x11",
+                    "WINIT_UNIX_BACKEND": "wayland", "ELECTRON_OZONE_PLATFORM_HINT": "wayland",
+                    "MOZ_ENABLE_WAYLAND": "1", "WEBKIT_DISABLE_DMABUF_RENDERER": "1"})
+    return env
+
+
 class Terminals:
     def __init__(self) -> None:
         self.items: dict[str, Terminal] = {}
@@ -111,65 +168,25 @@ class Terminals:
         laptop: waypipe's server side connects to that socket (a reverse listener, see tunnels.py).
         With preview=True, it runs under headless Xvfb with screen capture & interaction."""
         cmds = load_commands()
-        shell = cmds["shell"]
         cwd = (WORKSPACE / cwd_rel).resolve() if cwd_rel else WORKSPACE
         if not str(cwd).startswith(str(WORKSPACE)) or not cwd.is_dir():
             cwd = WORKSPACE
-        disp_num: int | None = None
-        xvfb_proc: subprocess.Popen | None = None
-        if kind == "run":
-            app = ["bash", "-lc", f"{cmd}; echo; echo \"[exited with code $?]\""]
-            if preview:
-                disp_num = _find_free_display()
-                if shutil.which("Xvfb"):
-                    try:
-                        xvfb_proc = subprocess.Popen(
-                            ["Xvfb", f":{disp_num}", "-screen", "0", "1024x768x24", "-nolisten", "tcp", "+extension", "GLX"],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                        )
-                        sock_path = f"/tmp/.X11-unix/X{disp_num}"
-                        for _ in range(25):
-                            if os.path.exists(sock_path):
-                                break
-                            time.sleep(0.04)
-                    except Exception:
-                        xvfb_proc = None
-            xwls = ["--xwls"] if shutil.which("xwayland-satellite") else []
-            argv = (["waypipe", "--socket", waypipe_socket, "--compress", "zstd", *xwls, "server", "--", *app]
-                    if waypipe_socket and not preview else app)
-        elif kind == "shell":
-            argv = ["bash", "-lc", f"exec {shell} -l"]
-        else:
-            if cmd.startswith("flags:"):
-                base = cmds[kind].replace("--dangerously-skip-permissions", "").strip()
-                allowed = AGENT_FLAGS[kind]
-                extra = [tok for tok in cmd[6:].split() if tok in allowed]
-                launch = f"{base} {' '.join(extra)}".strip()
-            else:
-                launch = cmds[kind]
-            argv = ["bash", "-lc", f"{launch}; echo; echo '[{kind} exited, here is a shell]'; exec {shell} -l"]
+        disp_num = _find_free_display() if (kind == "run" and preview) else None
+        xvfb_proc = _start_xvfb(disp_num) if disp_num is not None else None
+        argv = _build_spawn_argv(kind, cmd, cmds, waypipe_socket, preview)
         master, slave = os.openpty()
         _set_size(slave, cols, rows)
         os.makedirs(RUNTIME_DIR, mode=0o700, exist_ok=True)
-        env = {**os.environ, "TERM": "xterm-256color", "COLORTERM": "truecolor", "VB_TERMINAL_KIND": kind,
-               "XDG_RUNTIME_DIR": RUNTIME_DIR}
-        if kind == "run":
-            if preview and disp_num is not None:
-                env["DISPLAY"] = f":{disp_num}"
-                env.update({"GDK_BACKEND": "x11", "QT_QPA_PLATFORM": "xcb", "SDL_VIDEODRIVER": "x11",
-                            "WINIT_UNIX_BACKEND": "x11"})
-            else:  # toolkits: prefer Wayland (waypipe carries Wayland, not X11)
-                env.update({"GDK_BACKEND": "wayland", "QT_QPA_PLATFORM": "wayland;xcb", "SDL_VIDEODRIVER": "wayland,x11",
-                            "WINIT_UNIX_BACKEND": "wayland", "ELECTRON_OZONE_PLATFORM_HINT": "wayland",
-                            "MOZ_ENABLE_WAYLAND": "1", "WEBKIT_DISABLE_DMABUF_RENDERER": "1"})
+        env = _build_spawn_env(kind, preview, disp_num)
         proc = subprocess.Popen(argv, stdin=slave, stdout=slave, stderr=slave, cwd=cwd, env=env,
                                 start_new_session=True, close_fds=True,
                                 preexec_fn=lambda: fcntl.ioctl(0, termios.TIOCSCTTY, 0))
         os.close(slave)
         os.set_blocking(master, False)
+        title = f"▶ {cmd[:40]}" if kind == "run" else f"{TITLES[kind]}" + (f" · {cwd.name}" if cwd != WORKSPACE else "")
         t = Terminal(secrets.token_hex(8), kind, str(cwd.relative_to(WORKSPACE)) if cwd != WORKSPACE else "",
-                     proc, master, title=(f"▶ {cmd[:40]}" if kind == "run" else f"{TITLES[kind]}" + (f" · {cwd.name}" if cwd != WORKSPACE else "")),
-                     preview=bool(preview and disp_num is not None), display=disp_num, xvfb_proc=xvfb_proc)
+                     proc, master, title=title, preview=bool(preview and disp_num is not None),
+                     display=disp_num, xvfb_proc=xvfb_proc)
         self.items[t.id] = t
         asyncio.get_running_loop().add_reader(master, self._on_output, t)
         return t
@@ -179,7 +196,8 @@ class Terminals:
             data = os.read(t.fd, 65536)
         except BlockingIOError:
             return
-        except OSError:
+        except OSError as exc:
+            log.debug("PTY read ended for %s: %s", t.id, exc)
             data = b""
         if not data:
             self._on_exit(t)
@@ -201,8 +219,8 @@ class Terminals:
         loop.remove_reader(t.fd)
         try:
             os.close(t.fd)
-        except OSError:
-            pass
+        except OSError as exc:
+            log.debug("PTY close ignored for %s: %s", t.id, exc)
         try:
             t.exit_code = t.proc.wait(timeout=2)
         except subprocess.TimeoutExpired:
@@ -222,7 +240,8 @@ class Terminals:
             except BlockingIOError:
                 time.sleep(0.005)
                 continue
-            except OSError:
+            except OSError as exc:
+                log.debug("PTY write failed for %s: %s", t.id, exc)
                 return
             raw = raw[n:]
 
@@ -230,8 +249,8 @@ class Terminals:
         if t.alive:
             try:
                 _set_size(t.fd, cols, rows)
-            except OSError:
-                pass
+            except OSError as exc:
+                log.debug("PTY resize failed for %s: %s", t.id, exc)
 
     def close(self, tid: str) -> bool:
         t = self.items.pop(tid, None)
@@ -241,8 +260,8 @@ class Terminals:
         if t.alive:
             try:
                 os.killpg(t.proc.pid, signal.SIGHUP)
-            except ProcessLookupError:
-                pass
+            except ProcessLookupError as exc:
+                log.debug("Process group already exited for %s: %s", tid, exc)
             asyncio.get_running_loop().call_later(3, _force_kill, t.proc)
         return True
 
@@ -263,6 +282,6 @@ def _force_kill(proc: subprocess.Popen) -> None:
     if proc.poll() is None:
         try:
             os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        except ProcessLookupError as exc:
+            log.debug("Force kill skipped (already gone): %s", exc)
 

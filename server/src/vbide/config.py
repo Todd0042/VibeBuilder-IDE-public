@@ -106,5 +106,7 @@ class Settings:
     def read_secret(self, path: Path) -> str:
         try:
             return path.read_text().strip()
-        except FileNotFoundError:
+        except FileNotFoundError as exc:
+            import logging
+            logging.getLogger("vbide.config").debug("Secret file missing (%s): %s", path, exc)
             return ""

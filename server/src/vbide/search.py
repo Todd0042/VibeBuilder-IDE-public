@@ -59,13 +59,7 @@ class SearchBody(BaseModel):
     use_ignore_files: bool = True
 
 
-@router.post("/search")
-async def search(body: SearchBody, _: SessionDep, request: Request) -> dict:
-    svc = services(request)
-    try:
-        root = clean_rel(body.root)
-    except JailError as exc:
-        raise HTTPException(400, str(exc))
+def _build_rg_args(body: SearchBody) -> list[str]:
     args = ["--json", "--max-columns", "400", "--max-columns-preview", "--max-count", "300"]
     args += [] if body.regex else ["--fixed-strings"]
     args += ["--case-sensitive"] if body.case_sensitive else ["--ignore-case"]
@@ -78,8 +72,27 @@ async def search(body: SearchBody, _: SessionDep, request: Request) -> dict:
         if g:
             args += ["--glob", "!" + g.lstrip("!")]
     args += ["--regexp", body.query, "--", "."]
+    return args
 
-    proc = await _rg(svc, root, args, errors=True)
+
+def _submatch_ranges(text: str, submatches: list[dict]) -> list[list[int]]:
+    raw_bytes = text.encode()
+    ranges: list[list[int]] = []
+    for sm in submatches:
+        a = len(raw_bytes[:sm["start"]].decode(errors="ignore"))
+        b = len(raw_bytes[:sm["end"]].decode(errors="ignore"))
+        ranges.append([_u16(text, a), _u16(text, b)])
+    return ranges
+
+
+@router.post("/search")
+async def search(body: SearchBody, _: SessionDep, request: Request) -> dict:
+    svc = services(request)
+    try:
+        root = clean_rel(body.root)
+    except JailError as exc:
+        raise HTTPException(400, str(exc))
+    proc = await _rg(svc, root, _build_rg_args(body), errors=True)
     files: dict[str, dict] = {}
     count, truncated, not_text = 0, False, 0
     skipped: list[dict] = []
@@ -94,14 +107,14 @@ async def search(body: SearchBody, _: SessionDep, request: Request) -> dict:
             line = line[4:] if line.startswith("rg: ") else line
             path, _, reason = line.partition(": ")
             if not reason:
-                continue  # not a per-file message
+                continue
             skipped_count += 1
             if len(skipped) < 20:
                 path = path[2:] if path.startswith("./") else path
                 skipped.append({"path": (root + "/" + path) if root else path, "reason": reason[:200]})
 
     async def read() -> None:
-        nonlocal count, truncated
+        nonlocal count, truncated, not_text
         assert proc.stdout
         async for raw in proc.stdout:
             try:
@@ -111,21 +124,14 @@ async def search(body: SearchBody, _: SessionDep, request: Request) -> dict:
             if ev.get("type") != "match":
                 continue
             d = ev["data"]
-            path = d["path"].get("text")
-            text = d["lines"].get("text")
+            path, text = d["path"].get("text"), d["lines"].get("text")
             if path is None or text is None:
-                not_text += 1  # a match in a file that isn't UTF-8 text: counted and reported, not shown
+                not_text += 1
                 continue
             path = path[2:] if path.startswith("./") else path
             text = text.rstrip("\n")
-            raw_bytes = text.encode()
-            ranges = []
-            for sm in d.get("submatches", []):
-                a = len(raw_bytes[:sm["start"]].decode(errors="ignore"))
-                b = len(raw_bytes[:sm["end"]].decode(errors="ignore"))
-                ranges.append([_u16(text, a), _u16(text, b)])
             f = files.setdefault(path, {"path": (root + "/" + path) if root else path, "matches": []})
-            f["matches"].append({"line": d["line_number"], "text": text, "ranges": ranges})
+            f["matches"].append({"line": d["line_number"], "text": text, "ranges": _submatch_ranges(text, d.get("submatches", []))})
             count += 1
             if count >= MAX_MATCHES:
                 truncated = True

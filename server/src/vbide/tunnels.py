@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 
 import websockets
@@ -23,6 +24,7 @@ from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 from .auth.routes import SessionDep, ws_session
 from .services import services
 
+log = logging.getLogger("vbide.tunnels")
 router = APIRouter(prefix="/api/v1", tags=["tunnels"])
 
 _LISTENER = re.compile(r"^[a-z0-9-]{1,40}$")
@@ -89,16 +91,16 @@ async def tunnel(ws: WebSocket) -> None:
             _done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             for t in pending:
                 t.cancel()
-    except websockets.InvalidStatus:
-        pass  # nothing listening on that port in the builder, or the connection expired
-    except (WebSocketDisconnect, websockets.ConnectionClosed, OSError, RuntimeError):
-        pass
+    except websockets.InvalidStatus as exc:
+        log.debug("Tunnel target unavailable: %s", exc)
+    except (WebSocketDisconnect, websockets.ConnectionClosed, OSError, RuntimeError) as exc:
+        log.debug("Tunnel proxy closed: %s", exc)
     finally:
         remove()
         try:
             await ws.close(code=4401 if ended.is_set() else 1000)
-        except RuntimeError:
-            pass
+        except RuntimeError as exc:
+            log.debug("Tunnel ws.close ignored: %s", exc)
 
 
 def _clean_from_laptop(m: object) -> dict | None:
@@ -170,14 +172,14 @@ async def reverse(ws: WebSocket) -> None:
             _done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             for t in pending:
                 t.cancel()
-    except (WebSocketDisconnect, websockets.ConnectionClosed, websockets.InvalidStatus, OSError, RuntimeError):
-        pass
+    except (WebSocketDisconnect, websockets.ConnectionClosed, websockets.InvalidStatus, OSError, RuntimeError) as exc:
+        log.debug("Reverse tunnel proxy closed: %s", exc)
     finally:
         remove()
         try:
             await ws.close(code=4401 if ended.is_set() else 1000)
-        except RuntimeError:
-            pass
+        except RuntimeError as exc:
+            log.debug("Reverse tunnel ws.close ignored: %s", exc)
 
 
 @router.get("/ports")

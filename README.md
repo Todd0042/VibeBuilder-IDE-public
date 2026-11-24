@@ -9,7 +9,7 @@
 # 🛠️ VibeBuilder IDE
 
 [![Version](https://img.shields.io/github/v/release/Todd0042/VibeBuilder-IDE-public?label=Version&color=ff8a3d)](https://github.com/Todd0042/VibeBuilder-IDE-public/releases)
-[![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-00f0ff.svg)](LICENSE)
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-00f0ff.svg)](LICENSE)
 [![Platform: Linux](https://img.shields.io/badge/Platform-Linux%20(AppImage)-orange.svg)](https://github.com/Todd0042/VibeBuilder-IDE-public/releases)
 [![Platform: Android](https://img.shields.io/badge/Platform-Android%20(APK)-green.svg)](https://github.com/Todd0042/VibeBuilder-IDE-public/releases)
 [![App: Tauri 2 + Svelte 5](https://img.shields.io/badge/App-Tauri%202%20%2B%20Svelte%205-8a6cff.svg)]()

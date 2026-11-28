@@ -68,3 +68,53 @@ def test_client_ip_forwarded_uses_rightmost_xff_and_rejects_spoof():
 
     req_real_ip = _fake_request("forwarded", {"X-Real-IP": "198.51.100.30"}, host="127.0.0.1")
     assert client_ip(req_real_ip) == "198.51.100.30"
+
+
+def test_cf_login_and_web_serving(tmp_path):
+    from fastapi.testclient import TestClient
+    from vbide.app import create_app
+
+    ws = tmp_path / "github"
+    ws.mkdir()
+    (ws / "demo").mkdir()
+    (ws / "demo" / "README.md").write_text("# Demo\n")
+
+    # Under default totp mode, /cf-login is disabled (404).
+    import pyotp
+
+    d1_sec = tmp_path / "d1" / "secrets"
+    d1_sec.mkdir(parents=True)
+    (d1_sec / "totp_secret").write_text(pyotp.random_base32())
+    (d1_sec / "agent_token").write_text("tok123")
+    totp_app = create_app(
+        Settings(
+            workspace=ws,
+            data_dir=tmp_path / "d1",
+            agent_token_file=d1_sec / "agent_token",
+            auth_mode="totp",
+            serve_web=False,
+        )
+    )
+    with TestClient(totp_app) as c:
+        assert c.post("/api/v1/auth/cf-login").status_code == 404
+
+    # Under cloudflare mode, CF Access header issues a working session and serves web UI.
+    cf_app = create_app(
+        Settings(workspace=ws, data_dir=tmp_path / "d2", proxy_mode="cloudflare", auth_mode="cloudflare")
+    )
+    with TestClient(cf_app) as c:
+        root_r = c.get("/")
+        assert root_r.status_code == 200
+        assert "<title>" in root_r.text.lower()
+
+        r = c.post(
+            "/api/v1/auth/cf-login",
+            headers={"CF-Connecting-IP": "203.0.113.5", "Cf-Access-Authenticated-User-Email": "todd@example.com"},
+        )
+        assert r.status_code == 200
+        tok = r.json()["session"]
+        assert r.json()["device_name"] == "todd@example.com"
+
+        r_files = c.get("/api/v1/projects", headers={"Authorization": f"Bearer {tok}"})
+        assert r_files.status_code == 200
+        assert "demo" in r_files.text

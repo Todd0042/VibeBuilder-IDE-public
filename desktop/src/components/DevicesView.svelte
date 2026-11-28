@@ -45,11 +45,11 @@
   }
 
   async function revoke(d: DeviceInfo) {
-    const msg = d.current ? "This is the device you're using: you'll be signed out and need to pair again." : "It's signed out right away and has to pair again to come back.";
+    const msg = d.current ? "This is the device you're using: you'll be signed out and will reconnect via Cloudflare Access." : "It's signed out right away.";
     if (!(await ui.confirm(`Remove ${d.name}?`, msg, "Remove", true))) return;
     try {
       await session.api.revokeDevice(d.id);
-      if (d.current) await session.forgetDevice();
+      if (d.current) await session.lock();
       else await load();
     } catch (e) {
       ui.error(e);
@@ -73,7 +73,7 @@
       </div>
     {/each}
   {/if}
-  <p class="faint">Up to {max} devices can be paired. To add one, run <code>vibebuilder pair</code> on the desktop.</p>
+  <p class="faint">Authenticated via Cloudflare Zero Trust Access (up to {max} active sessions).</p>
   {#each devices as d (d.id)}
     <div class="dev" class:current={d.current}>
       <div class="name">{d.name}{#if d.current}<span class="badge">this device</span>{/if}</div>

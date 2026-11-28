@@ -35,9 +35,16 @@ MAX_BODY = 12 * 1024 * 1024
 
 
 def build_services(settings: Settings) -> Services:
+    import secrets
+
     settings.secrets_dir.mkdir(parents=True, exist_ok=True)
-    for what, path, effect in (("authenticator secret", settings.totp_secret_file, "nobody can sign in"),
-                               ("builder link token", settings.agent_token_file, "terminals, git and checkpoints fail")):
+    if not settings.read_secret(settings.agent_token_file) and settings.auth_mode == "cloudflare":
+        settings.agent_token_file.parent.mkdir(parents=True, exist_ok=True)
+        settings.agent_token_file.write_text(secrets.token_urlsafe(32) + "\n")
+    req = [("builder link token", settings.agent_token_file, "terminals, git and checkpoints fail")]
+    if settings.auth_mode != "cloudflare":
+        req.insert(0, ("authenticator secret", settings.totp_secret_file, "nobody can sign in"))
+    for what, path, effect in req:
         if not settings.read_secret(path):  # said loudly at startup: without it the app can't even show the problem
             logging.getLogger("vbide").error("Missing %s (%s): %s. Fix: vibebuilder install (or restore the file).",
                                              what, path, effect)
@@ -50,8 +57,13 @@ def build_services(settings: Settings) -> Services:
     recorder = Recorder(jail, history, settle_sec=settings.file_settle_sec, quiet_sec=settings.changeset_quiet_sec,
                         max_file_bytes=settings.history_max_file_bytes, attribute=agent.attribute, emit=hub.publish,
                         changed=checkpointer.touched, problem=probs.report)
+    totp_secret = settings.read_secret(settings.totp_secret_file)
+    if not totp_secret and settings.auth_mode == "cloudflare":
+        import pyotp
+
+        totp_secret = pyotp.random_base32()
     return Services(
-        settings=settings, jail=jail, totp=Totp(settings.read_secret(settings.totp_secret_file)),
+        settings=settings, jail=jail, totp=Totp(totp_secret),
         devices=DeviceStore(settings.auth_db, settings.pair_dir, settings.max_devices, settings.pair_code_ttl_sec),
         sessions=SessionStore(settings.session_idle_sec), guard=Guard(
             settings.max_failures_per_ip, settings.lockout_sec, settings.max_global_failures),
@@ -103,6 +115,13 @@ def create_app(settings: Settings | None = None, svc: Services | None = None) ->
     for r in (auth_routes.router, files.router, search.router, history_routes.router, agent_link.router,
               live.router, tunnels.router, checkpoints.router, agent_rules.router, problems.router, media.router):
         app.include_router(r)
+    if settings.serve_web:
+        from pathlib import Path
+        from fastapi.staticfiles import StaticFiles
+
+        dist_dir = Path(__file__).resolve().parents[3] / "desktop" / "dist"
+        if (dist_dir / "index.html").is_file():
+            app.mount("/", StaticFiles(directory=str(dist_dir), html=True), name="web")
     return app
 
 

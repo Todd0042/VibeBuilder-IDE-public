@@ -5,6 +5,11 @@
   "windows": [
     "main"
   ],
+  "remote": {
+    "urls": [
+      "https://*/*"
+    ]
+  },
   "permissions": [
     "core:default",
     "core:window:allow-destroy",

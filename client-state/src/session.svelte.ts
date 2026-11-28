@@ -1,15 +1,15 @@
-// Signing in and staying signed in: pairing, and the authenticator code when the app opens.
+// Signing in and staying signed in via Cloudflare Zero Trust Access (/api/v1/auth/cf-login).
 // No idle lock: while the app is open it checks in with the server every 2 minutes; the server ends a
 // session it hasn't heard from in 10 minutes (an app that crashed, lost power, or a device asleep).
-import { Api, ApiError, LiveSocket, normalizeServer, type LiveEvent } from "@core/index";
-import { tokenDelete, tokenGet, tokenSet, tunnelSession } from "@platform";
+import { Api, LiveSocket, normalizeServer, type LiveEvent } from "@core/index";
+import { tunnelSession } from "@platform";
 import { ui } from "./ui.svelte";
 
-// Built in from VB_PUBLIC_URL in vibebuilder.env; empty = the sign-in screen asks for it.
+// Built in from VB_PUBLIC_URL in vibebuilder.env; falls back to window.location.origin when served over http(s).
 export const DEFAULT_SERVER: string = import.meta.env.VITE_DEFAULT_SERVER ?? "";
 const KEEPALIVE_MS = 2 * 60 * 1000;
 
-export type Phase = "starting" | "pair" | "code" | "ready";
+export type Phase = "starting" | "auth" | "ready";
 
 class SessionState {
   phase = $state<Phase>("starting");
@@ -40,62 +40,54 @@ class SessionState {
   }
 
   async init() {
+    if (!this.server && typeof window !== "undefined" && window.location.protocol.startsWith("http")) {
+      this.server = window.location.origin;
+    }
     this.api = this.makeApi(this.server);
     if (!this.server) {
-      this.phase = "pair";
+      this.phase = "auth";
       return;
     }
-    const token = await tokenGet(this.api.server).catch(() => null);
-    this.phase = token ? "code" : "pair";
+    try {
+      const res = await fetch(`${this.api.server}/api/v1/auth/cf-login`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (res.ok) {
+        const d = await res.json();
+        this.api.session = d.session;
+        this.deviceName = d.device_name || "Browser";
+        this.lockReason = "";
+        void tunnelSession(this.api.server, this.api.session);
+        this.phase = "ready";
+        this.startLive();
+        this.startKeepalive();
+        return;
+      }
+      this.lockReason = `Server returned ${res.status} — sign in via Cloudflare Access to continue.`;
+    } catch {
+      this.lockReason = "Couldn't reach the server or Cloudflare Access session expired.";
+    }
+    this.phase = "auth";
   }
 
   private makeApi(server: string): Api {
     const api = new Api(server);
-    api.onSignedOut = () => this.signedOut("You were signed out (this device was removed, the app was away for over 10 minutes, or the server restarted).");
+    api.onSignedOut = () => this.signedOut("Session ended — reconnect via Cloudflare Access.");
     return api;
   }
 
   async setServer(url: string) {
     this.server = normalizeServer(url);
     localStorage.setItem("vb.server", this.server);
-    this.api = this.makeApi(this.server);
-    const token = await tokenGet(this.api.server).catch(() => null);
-    this.phase = token ? "code" : "pair";
-  }
-
-  async pair(code: string, name: string) {
-    const r = await this.api.pair(code, name);
-    await tokenSet(this.api.server, r.device_token);
-    this.deviceName = r.device_name;
-    this.phase = "code";
-  }
-
-  async login(code: string) {
-    const token = await tokenGet(this.api.server);
-    if (!token) {
-      this.phase = "pair";
-      throw new ApiError(401, "This device isn't paired yet.");
-    }
-    try {
-      const r = await this.api.login(token, code);
-      this.deviceName = r.device_name;
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 401 && /isn't paired|removed/.test(e.message)) {
-        await tokenDelete(this.api.server);
-        this.phase = "pair";
-      }
-      throw e;
-    }
     this.lockReason = "";
-    void tunnelSession(this.api.server, this.api.session);
-    this.phase = "ready";
-    this.startLive();
-    this.startKeepalive();
+    await this.init();
   }
 
-  async forgetDevice() {
-    await tokenDelete(this.api.server);
-    this.phase = "pair";
+  async reconnect() {
+    this.lockReason = "";
+    this.phase = "starting";
+    await this.init();
   }
 
   /** Called when a mobile app returns from background: check session validity & refresh sockets. */
@@ -134,14 +126,14 @@ class SessionState {
     this.stopBackground();
     await Promise.race([this.api.logout(), new Promise((r) => setTimeout(r, 3000))]);
     this.lockReason = reason;
-    if (this.phase === "ready") this.phase = "code";
+    if (this.phase === "ready") this.phase = "auth";
     return true;
   }
 
   private signedOut(reason: string) {
     this.stopBackground();
     this.lockReason = reason;
-    if (this.phase === "ready") this.phase = "code";
+    if (this.phase === "ready") this.phase = "auth";
     for (const h of this.signedOutHandlers) h();
   }
 

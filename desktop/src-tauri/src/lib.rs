@@ -4,6 +4,7 @@
 
 mod tunnel;
 
+use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use tunnel::Tunnels;
 
 const SERVICE: &str = "VibeBuilder-IDE";
@@ -101,6 +102,24 @@ pub fn run() {
     let _ = rustls::crypto::ring::default_provider().install_default();
     tauri::Builder::default()
         .manage(Tunnels::default())
+        .setup(|app| {
+            let server_url = option_env!("VITE_DEFAULT_SERVER")
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or("https://ide.example.com");
+            let parsed = server_url
+                .parse()
+                .map_err(|e| format!("Invalid server URL {server_url}: {e}"))?;
+            let data_dir = app.path().app_data_dir()?.join("webview");
+            std::fs::create_dir_all(&data_dir)?;
+            WebviewWindowBuilder::new(app, "main", WebviewUrl::External(parsed))
+                .title("VibeBuilder IDE")
+                .inner_size(1500.0, 920.0)
+                .min_inner_size(900.0, 560.0)
+                .resizable(true)
+                .data_directory(data_dir)
+                .build()?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             token_get, token_set, token_delete, device_name, tunnel_session, port_forward, port_unforward,
             port_forwards, adb_connect, adb_disconnect, adb_status, gui_start, gui_stop

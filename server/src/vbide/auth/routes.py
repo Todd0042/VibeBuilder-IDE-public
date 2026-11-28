@@ -61,7 +61,8 @@ async def ws_session(ws: WebSocket) -> Session | None:
     the URL (URLs end up in logs). Returns None after closing the socket if anything is wrong."""
     svc: Services = ws.app.state.svc
     origin = ws.headers.get("origin")
-    if origin is not None and origin not in svc.settings.allowed_origins:
+    allowed = set(svc.settings.allowed_origins) | ({svc.settings.public_url} if svc.settings.public_url else set())
+    if origin is not None and origin not in allowed:
         await ws.close(code=4403)
         return None
     await ws.accept()
@@ -106,6 +107,27 @@ def pair(body: PairBody, request: Request) -> dict:
         raise HTTPException(401, "That code is wrong or expired. Codes last 30 seconds; use the one showing now.")
     dev, token = got
     return {"device_id": dev.id, "device_name": dev.name, "device_token": token}
+
+
+@router.post("/cf-login")
+def cf_login(request: Request) -> dict:
+    svc, ip = services(request), client_ip(request)
+    if svc.settings.auth_mode != "cloudflare":
+        raise HTTPException(404, "Not Found")
+    cf_email = request.headers.get("cf-access-authenticated-user-email", "").strip()
+    cf_jwt = request.headers.get("cf-access-jwt-assertion", "").strip()
+    is_loopback = ip in ("127.0.0.1", "::1", "localhost")
+    if not (cf_email or cf_jwt or is_loopback):
+        raise HTTPException(401, "Cloudflare Access authentication required")
+    label = cf_email or "Localhost"
+    dev = svc.devices.ensure_cf_device(label, ip)
+    token = svc.sessions.create(dev.id)
+    return {
+        "session": token,
+        "idle_timeout_sec": svc.settings.session_idle_sec,
+        "device_id": dev.id,
+        "device_name": dev.name,
+    }
 
 
 @router.post("/login")

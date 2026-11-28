@@ -69,6 +69,21 @@ class DeviceStore:
             rows = db.execute("SELECT id, name, created, last_seen, last_ip FROM devices ORDER BY created").fetchall()
         return [Device(*r) for r in rows]
 
+    def ensure_cf_device(self, name: str, ip: str) -> Device:
+        dev_id = f"cf:{name.lower()}"
+        now = time.time()
+        with self._lock, self._db() as db:
+            row = db.execute("SELECT id, name, created, last_seen, last_ip FROM devices WHERE id=?", (dev_id,)).fetchone()
+            if row:
+                db.execute("UPDATE devices SET last_seen=?, last_ip=? WHERE id=?", (now, ip, dev_id))
+                return Device(row[0], row[1], row[2], now, ip)
+            th = _h(f"cf-internal-{dev_id}")
+            db.execute(
+                "INSERT INTO devices(id, name, token_hash, created, last_seen, last_ip) VALUES(?,?,?,?,?,?)",
+                (dev_id, name, th, now, now, ip),
+            )
+            return Device(dev_id, name, now, now, ip)
+
     def find_by_token(self, token: str) -> Device | None:
         if not token or len(token) > 256:
             return None

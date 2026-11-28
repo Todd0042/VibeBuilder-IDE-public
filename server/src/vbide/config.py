@@ -33,13 +33,35 @@ def _proxy_mode() -> str:
     return "none"
 
 
+def _default_workspace() -> Path:
+    raw = os.environ.get("VB_WORKSPACE", "").strip()
+    if raw:
+        return Path(raw)
+    docs_gh = Path.home() / "Documents" / "GitHub"
+    if docs_gh.is_dir():
+        return docs_gh
+    gh = Path.home() / "GitHub"
+    if gh.is_dir():
+        return gh
+    return Path("/workspace")
+
+
+def _default_data_dir() -> Path:
+    raw = os.environ.get("VB_DATA", "").strip()
+    if raw:
+        return Path(raw)
+    return Path.home() / ".local" / "share" / "vibebuilder-ide"
+
+
 @dataclass(frozen=True)
 class Settings:
-    workspace: Path = field(default_factory=lambda: Path(os.environ.get("VB_WORKSPACE", "/workspace")))
-    data_dir: Path = field(default_factory=lambda: Path(os.environ.get("VB_DATA", "/data")))
-    agent_url: str = field(default_factory=lambda: os.environ.get("VB_AGENT_URL", "ws://vb-builder:7070"))
+    workspace: Path = field(default_factory=_default_workspace)
+    data_dir: Path = field(default_factory=_default_data_dir)
+    agent_url: str = field(default_factory=lambda: os.environ.get("VB_AGENT_URL", "ws://127.0.0.1:7070"))
     agent_token_file: Path = field(
-        default_factory=lambda: Path(os.environ.get("VB_AGENT_TOKEN_FILE", "/run/vb-link/agent_token")))
+        default_factory=lambda: Path(os.environ.get("VB_AGENT_TOKEN_FILE") or str(_default_data_dir() / "secrets" / "agent_token")))
+    auth_mode: str = field(default_factory=lambda: os.environ.get("VB_AUTH_MODE", "totp").strip().lower() or "totp")
+    serve_web: bool = field(default_factory=lambda: os.environ.get("VB_SERVE_WEB", "1").strip() == "1")
     allowed_origins: list[str] = field(default_factory=lambda: _list(
         "VB_ALLOWED_ORIGINS", "tauri://localhost,http://tauri.localhost,http://localhost:1420"))
     # Where devices reach this server (shown in the pairing QR), and the name authenticator apps show.

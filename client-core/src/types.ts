@@ -30,7 +30,7 @@ export interface DiffLine { t: " " | "-" | "+"; o: number | null; n: number | nu
 export interface Hunk { old_start: number; old_count: number; new_start: number; new_count: number; lines: DiffLine[] }
 export interface FileDiff {
   path: string; status: "added" | "deleted" | "modified"; before: string | null; after: string | null;
-  added: number; removed: number; hunks: Hunk[]; note: string;
+  added: number; removed: number; hunks: Hunk[]; note: string; deferred?: boolean;
 }
 export interface ChangesetDetail { id: number; started: number; ended: number; source: Source; label: string; closed: boolean; files: FileDiff[] }
 export interface RangeDetail { since: number; until: number; files: FileDiff[] }

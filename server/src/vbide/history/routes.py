@@ -82,6 +82,35 @@ async def list_changesets(_: SessionDep, request: Request, before: int | None = 
     return {"changesets": items, "open": svc.recorder.open_changeset_info()}
 
 
+_EAGER_DIFF_LIMIT = 12
+
+
+def _deferred_file_entry(path: str, before: str | None, after: str | None) -> dict:
+    status = "added" if before is None else ("deleted" if after is None else "modified")
+    return {
+        "path": path,
+        "status": status,
+        "before": before,
+        "after": after,
+        "added": 0,
+        "removed": 0,
+        "hunks": [],
+        "note": "",
+        "deferred": True,
+    }
+
+
+def _build_diff_entries(svc, pairs: list[tuple[str, str | None, str | None]], context: int, project: str) -> list[dict]:
+    filtered = [(p, b, a) for p, b, a in pairs if _in_project(p, project)]
+    out: list[dict] = []
+    for idx, (p, b, a) in enumerate(filtered):
+        if idx < _EAGER_DIFF_LIMIT:
+            out.append(file_entry(svc, p, b, a, context))
+        else:
+            out.append(_deferred_file_entry(p, b, a))
+    return out
+
+
 @router.get("/changesets/{cs_id}")
 async def get_changeset(cs_id: int, _: SessionDep, request: Request, context: int = 3, project: str = "") -> dict:
     svc = services(request)
@@ -91,8 +120,7 @@ async def get_changeset(cs_id: int, _: SessionDep, request: Request, context: in
         info = svc.history.changeset(cs_id)
         if not info:
             raise HTTPException(404, "No such change set")
-        files = [file_entry(svc, p, b, a, context) for p, b, a in svc.history.changeset_files(cs_id)
-                 if _in_project(p, project)]
+        files = _build_diff_entries(svc, svc.history.changeset_files(cs_id), context, project)
         return {**info, "files": files}
 
     return await run_in_threadpool(run)
@@ -105,8 +133,7 @@ async def get_range(_: SessionDep, request: Request, since: float, until: float 
     context = max(0, min(context, 100_000))
 
     def run() -> dict:
-        files = [file_entry(svc, p, b, a, context) for p, b, a in svc.history.range_files(since, until)
-                 if _in_project(p, project)]
+        files = _build_diff_entries(svc, svc.history.range_files(since, until), context, project)
         return {"since": since, "until": until or time.time(), "files": files}
 
     return await run_in_threadpool(run)

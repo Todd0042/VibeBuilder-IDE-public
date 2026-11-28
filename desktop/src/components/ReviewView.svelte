@@ -22,7 +22,7 @@
     const src = tab.source;
     try {
       if (src.type === "changeset") {
-        const d = await session.api.changeset(src.id);
+        const d = await session.api.changeset(src.id, 3, changes.allProjects ? "" : ui.project);
         files = d.files;
         header = { source: d.source, started: d.started, ended: d.ended, label: d.label };
       } else if (src.type === "range") {
@@ -165,9 +165,9 @@
   .grow { flex: 1; }
   .plus { color: var(--ok); font: 600 12px var(--mono); }
   .minus { color: var(--bad); font: 600 12px var(--mono); }
-  .list { flex: 1; overflow: auto; padding: 14px 18px 60px; display: flex; flex-direction: column; gap: 14px; }
+  .list { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 18px 60px; display: flex; flex-direction: column; gap: 14px; }
   .pad { padding: 8px 2px; }
   .err { color: var(--bad); }
-  .ver { display: flex; flex-direction: column; gap: 6px; }
+  .ver { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
   .vhead { display: flex; align-items: center; gap: 9px; font-size: 12.5px; }
 </style>

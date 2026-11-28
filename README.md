@@ -64,7 +64,7 @@ It splits into three pieces:
 ## 🔁 How It Works in 3 Steps
 
 1. **Set Up the Desktop**: Copy `vibebuilder.env.example` to `vibebuilder.env`, then `vibebuilder install`, `build` and `start`. Put Tailscale Serve, Cloudflare Tunnel, or another HTTPS reverse proxy in front of it (see the [Remote Access Setup Guide](remote-access.md)).
-2. **Pair Your Laptop or Phone**: Open the app, enter your server's address (or point your phone's camera at the pairing QR code from `vibebuilder pair`), and confirm the 30-second one-time code. Then sign in with your authenticator app's 6-digit code.
+2. **Sign In via Cloudflare Access**: Open the desktop app or `https://ide.your-domain.com`, sign in once through Cloudflare Zero Trust Access (the desktop app's WebView remembers your session cookie across restarts).
 3. **Code & Review**: Open a project, start a Claude or agy terminal, and watch the **Changes** timeline fill up with exactly what the agent changed, file by file, ready to review, restore or undo.
 
 ---

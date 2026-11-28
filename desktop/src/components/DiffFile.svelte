@@ -56,7 +56,12 @@
   </header>
 
   {#if !collapsed}
-    {#if file.note}
+    {#if file.deferred && onmore}
+      <div class="note faint">
+        Large changeset — diff deferred to keep loading fast.
+        <button class="btn small ghost" disabled={busy} onclick={() => more(3)}>Load diff</button>
+      </div>
+    {:else if file.note}
       <div class="note faint">{file.note}</div>
     {:else if !file.hunks.length}
       <div class="note faint">{file.status === "added" ? "Empty file" : "No text changes"}</div>
@@ -83,7 +88,7 @@
 </section>
 
 <style>
-  .file { border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; background: #12141a; }
+  .file { flex: 0 0 auto; border: 1px solid var(--line-2); border-radius: 8px; overflow: clip; background: #12141a; }
   header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 7px; padding: 5px 8px; background: #1a1e26; border-bottom: 1px solid var(--line); }
   .status { font: 700 11px var(--mono); width: 18px; height: 18px; border-radius: 4px; display: grid; place-items: center; }
   .status.modified { background: #3a3218; color: var(--warn); }
